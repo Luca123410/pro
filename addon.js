@@ -7,8 +7,8 @@ const NodeCache = require("node-cache");
 // --- MODULI ESTERNI ---
 const RD = require("./rd");
 const Corsaro = require("./corsaro");
-const Knaben = require("./knaben");   // Il tuo modulo Knaben ITA
-const TorrentMagnet = require("./torrentmagnet"); // Questo rimane per il Global
+const Knaben = require("./knaben"); 
+const TorrentMagnet = require("./torrentmagnet"); // Ora è STRICT ITA
 const UIndex = require("./uindex"); 
 
 // --- CONFIGURAZIONE CACHE ---
@@ -21,10 +21,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // --- MANIFEST ---
 const manifestBase = {
-    id: "org.community.corsaro-brain-update",
-    version: "23.2.0",
-    name: "Corsaro + Knaben ITA (THE BRAIN)",
-    description: "🇮🇹 Motore V23.2: Knaben Potenziato (ITA), Smart Matching, RD Autoplay.",
+    id: "org.community.corsaro-brain-ita-strict",
+    version: "23.8.0",
+    name: "Corsaro + TorrentMagnet (SOLO ITA)",
+    description: "🇮🇹 Motore V23.8: TorrentMagnet forzato su ITA. Dogana attiva su Knaben.",
     resources: ["catalog", "stream"],
     types: ["movie", "series"],
     catalogs: [{ type: "movie", id: "tmdb_trending", name: "Popolari Italia" }],
@@ -34,7 +34,7 @@ const manifestBase = {
 
 // --- UTILITIES ---
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-const REAL_SIZE_FILTER = 200 * 1024 * 1024; // 200MB soglia minima
+const REAL_SIZE_FILTER = 200 * 1024 * 1024; 
 
 function formatBytes(bytes) {
     if (!+bytes) return '0 B';
@@ -48,7 +48,36 @@ function getConfig(configStr) {
     try { return JSON.parse(Buffer.from(configStr, 'base64').toString()); } catch (e) { return {}; }
 }
 
-// --- 🧠 SMART MATCHING LOGIC ---
+// --- 👮‍♂️ LA DOGANA (STRICT ITALIAN CHECK) ---
+function isSafeForItalian(item) {
+    // 1. Corsaro e TorrentMagnet (nuova versione) sono sicuri
+    if (item.source === "Corsaro" || item.source === "TorrentMagnet") return true;
+
+    const t = item.title.toUpperCase();
+
+    // 2. Controllo Presenza ITA
+    const hasIta = t.includes("ITA") || t.includes("ITALIAN") || t.includes("IT-EN");
+
+    // 3. Controllo MULTI
+    const hasMulti = t.includes("MULTI") || t.includes("DUAL") || t.includes("TRIPLE");
+
+    // REGOLE DI FERRO:
+    if (hasIta) return true;
+
+    // Se dice Multi, ma c'è scritto French/German e NON Ita -> SCARTA
+    const isForeignMulti = t.includes("FRENCH") || t.includes("GERMAN") || t.includes("SPANISH");
+    if (hasMulti && isForeignMulti && !hasIta) return false;
+
+    // Se non c'è né ITA né MULTI -> SCARTA (Probabile solo ENG)
+    if (!hasIta && !hasMulti) return false;
+
+    // Se è Multi generico, lo facciamo passare (spesso contiene ITA)
+    if (hasMulti) return true; 
+
+    return false;
+}
+
+// --- SMART MATCHING LOGIC ---
 function isExactEpisodeMatch(torrentTitle, season, episode) {
     if (!torrentTitle) return false;
     const title = torrentTitle.toLowerCase();
@@ -152,6 +181,7 @@ async function generateCatalog(type, id, config) {
     return { metas: [] };
 }
 
+// --- STREAM HANDLER ---
 async function generateStream(type, id, config, userConfStr) {
     const { rd, tmdb } = config || {};
     const filters = config.filters || {}; 
@@ -171,37 +201,51 @@ async function generateStream(type, id, config, userConfStr) {
 
         let queries = [];
         
+        // --- COSTRUZIONE QUERY ---
         if (metadata.isSeries) {
             const s = String(metadata.season).padStart(2, '0');
             const e = String(metadata.episode).padStart(2, '0');
+            // Titolo Italiano
             queries.push(`${metadata.title} S${s}E${e}`);
             queries.push(`${metadata.title} Stagione ${metadata.season}`);
+            
+            // Titolo Originale (Per Knaben)
             if (metadata.originalTitle && metadata.originalTitle !== metadata.title) {
                 queries.push(`${metadata.originalTitle} S${s}E${e}`);
             }
         } else {
+            // Film
             queries.push(`${metadata.title} ${metadata.year}`);
             if (metadata.originalTitle && metadata.originalTitle !== metadata.title) {
                 queries.push(`${metadata.originalTitle} ${metadata.year}`);
             }
         }
         queries = [...new Set(queries)];
-
+        
         let promises = [];
 
-        // 1. CORSARO & UINDEX (Fonti ITA Primarie): Cercano TUTTE le varianti
+        // 1. GRUPPO ITA (Priority): Corsaro, UIndex, TorrentMagnet
+        // TorrentMagnet ora riceve la query "base" e ci aggiunge " ITA" da solo.
         queries.forEach(q => {
             promises.push(Corsaro.searchMagnet(q, metadata.year).catch(()=>[]));
             promises.push(UIndex.searchMagnet(q, metadata.year).catch(()=>[]));
+            promises.push(TorrentMagnet.searchMagnet(q, metadata.year).catch(()=>[]));
         });
 
-        // 2. KNABEN (Ora è una fonte ITA grazie al tuo Regex):
-        // Lo eseguiamo SEMPRE, ma solo sulla query principale per non rallentare
-        promises.push(Knaben.searchMagnet(queries[0], metadata.year).catch(()=>[]));
-
-        // 3. GLOBAL (TorrentMagnet): Cerca solo se l'utente non vuole solo ITA
+        // 2. KNABEN (Backup Global)
+        // Usa la query originale (spesso inglese) ma poi passa la DOGANA
         if (!filters.onlyIta) {
-            promises.push(TorrentMagnet.searchMagnet(queries[0], metadata.year).catch(()=>[]));
+            let globalQuery = queries.length > 1 ? queries[queries.length - 1] : queries[0]; 
+            if (metadata.originalTitle) {
+                if(metadata.isSeries) {
+                    const s = String(metadata.season).padStart(2, '0');
+                    const e = String(metadata.episode).padStart(2, '0');
+                    globalQuery = `${metadata.originalTitle} S${s}E${e}`;
+                } else {
+                    globalQuery = `${metadata.originalTitle} ${metadata.year}`;
+                }
+            }
+            promises.push(Knaben.searchMagnet(globalQuery, metadata.year).catch(()=>[]));
         }
 
         const resultsArray = await Promise.all(promises);
@@ -209,10 +253,14 @@ async function generateStream(type, id, config, userConfStr) {
 
         if (allResults.length === 0) return { streams: [{ title: `🚫 Nessun risultato` }] };
 
-        // DEDUPLICAZIONE
+        // --- FILTRAGGIO DOGANALE E DEDUPLICAZIONE ---
         let uniqueResults = [];
         const magnetSet = new Set();
+        
         for (const item of allResults) {
+            // 👮‍♂️ DOGANA
+            if (!isSafeForItalian(item)) continue;
+
             const hashMatch = item.magnet.match(/btih:([A-F0-9]{40})/i);
             const key = hashMatch ? hashMatch[1].toUpperCase() : item.magnet;
             if (!magnetSet.has(key)) {
@@ -221,7 +269,7 @@ async function generateStream(type, id, config, userConfStr) {
             }
         }
 
-        // SMART FILTERING
+        // INTELLIGENT FILTERING
         if (metadata.isSeries) {
             uniqueResults = uniqueResults.filter(item => isExactEpisodeMatch(item.title, metadata.season, metadata.episode));
         }
@@ -248,8 +296,8 @@ async function generateStream(type, id, config, userConfStr) {
                 
                 let displayLang = lang.join(" / ");
                 if (!displayLang) {
-                     if (["Corsaro", "UIndex", "Knaben"].includes(item.source)) displayLang = "ITA 🇮🇹";
-                     else displayLang = "MULTI / ENG 🌐";
+                     // Poiché abbiamo filtrato tutto rigidamente, se siamo qui è ITA
+                     displayLang = "ITA 🇮🇹";
                 }
 
                 let nameTag = `[RD ⚡] ${item.source}`;
@@ -325,4 +373,4 @@ app.get('/:userConf/stream/:type/:id.json', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`Addon The Brain v23.2.0 avviato su porta ${PORT}!`));
+app.listen(PORT, () => console.log(`Addon The Brain v23.8.0 avviato su porta ${PORT}!`));
