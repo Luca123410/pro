@@ -3,17 +3,29 @@ const cors = require("cors");
 const path = require("path");
 const axios = require("axios");
 const NodeCache = require("node-cache");
+const Bottleneck = require("bottleneck"); 
 
 // --- MODULI ESTERNI ---
+// Assicurati che questi file esistano nella stessa cartella
 const RD = require("./rd");
 const Corsaro = require("./corsaro");
 const Knaben = require("./knaben"); 
-const TorrentMagnet = require("./torrentmagnet"); // Ora è STRICT ITA
+const TorrentMagnet = require("./torrentmagnet"); 
 const UIndex = require("./uindex"); 
 
-// --- CONFIGURAZIONE CACHE ---
-const streamCache = new NodeCache({ stdTTL: 1800, checkperiod: 300 }); 
-const catalogCache = new NodeCache({ stdTTL: 43200, checkperiod: 600 });
+// --- COSTANTI & CONFIGURAZIONE ---
+const CINEMETA_URL = 'https://v3-cinemeta.strem.io';
+const REAL_SIZE_FILTER = 200 * 1024 * 1024; 
+
+// Cache interna (RAM) per evitare di richiamare funzioni pesanti troppo spesso
+const internalCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
+
+// --- RATE LIMITER (ANTI-FLOOD) ---
+// Limita le richieste verso i siti esterni (max 5 contemporanee, min 200ms pausa)
+const scraperLimiter = new Bottleneck({
+    maxConcurrent: 5,
+    minTime: 200
+});
 
 const app = express();
 app.use(cors());
@@ -21,10 +33,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // --- MANIFEST ---
 const manifestBase = {
-    id: "org.community.corsaro-brain-ita-strict",
-    version: "23.8.0",
-    name: "Corsaro + TorrentMagnet (SOLO ITA)",
-    description: "🇮🇹 Motore V23.8: TorrentMagnet forzato su ITA. Dogana attiva su Knaben.",
+    id: "org.community.corsaro-brain-ita-strict-v2",
+    version: "24.0.1",
+    name: "Corsaro + TorrentMagnet (SUPER STRICT)",
+    description: "🇮🇹 Motore V24.1: Tolleranza Zero per i Multi stranieri. Solo ITA Verificato.",
     resources: ["catalog", "stream"],
     types: ["movie", "series"],
     catalogs: [{ type: "movie", id: "tmdb_trending", name: "Popolari Italia" }],
@@ -34,7 +46,6 @@ const manifestBase = {
 
 // --- UTILITIES ---
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-const REAL_SIZE_FILTER = 200 * 1024 * 1024; 
 
 function formatBytes(bytes) {
     if (!+bytes) return '0 B';
@@ -48,173 +59,227 @@ function getConfig(configStr) {
     try { return JSON.parse(Buffer.from(configStr, 'base64').toString()); } catch (e) { return {}; }
 }
 
+// Helper per applicare header di cache dinamici (preso dallo snippet SDK)
+function applyCacheHeaders(res, data) {
+    const cacheHeaders = {
+        cacheMaxAge: 'max-age',
+        staleRevalidate: 'stale-while-revalidate',
+        staleError: 'stale-if-error'
+    };
+
+    // Defaults: Cache lunga (4 ore) se non specificato diversamente
+    const defaults = {
+        cacheMaxAge: 14400,       
+        staleRevalidate: 86400,   
+        staleError: 604800        
+    };
+
+    const parts = [];
+    Object.keys(cacheHeaders).forEach(prop => {
+        const headerName = cacheHeaders[prop];
+        // Se la funzione ha ritornato un valore specifico, usalo, altrimenti default
+        const value = (data[prop] !== undefined) ? data[prop] : defaults[prop];
+        if (Number.isInteger(value)) {
+            parts.push(`${headerName}=${value}`);
+        }
+    });
+
+    if (parts.length > 0) {
+        res.setHeader('Cache-Control', `${parts.join(', ')}, public`);
+    }
+}
+
 // --- 👮‍♂️ LA DOGANA (STRICT ITALIAN CHECK) ---
 function isSafeForItalian(item) {
-    // 1. Corsaro e TorrentMagnet (nuova versione) sono sicuri
-    if (item.source === "Corsaro" || item.source === "TorrentMagnet") return true;
+    // 1. SOLO CORSARO è affidabile al 100% (Tracker solo ITA)
+    // TorrentMagnet, Knaben e UIndex sono misti, quindi devono passare il controllo.
+    if (item.source === "Corsaro") return true;
 
     const t = item.title.toUpperCase();
 
-    // 2. Controllo Presenza ITA
+    // 2. Controllo Presenza ITA Esplicita
     const hasIta = t.includes("ITA") || t.includes("ITALIAN") || t.includes("IT-EN");
 
-    // 3. Controllo MULTI
-    const hasMulti = t.includes("MULTI") || t.includes("DUAL") || t.includes("TRIPLE");
-
-    // REGOLE DI FERRO:
+    // 3. REGOLA FERREA: Se c'è scritto ITA passa, altrimenti si scarta.
+    // Questo elimina tutti i "Multi" generici (Inglese/Russo/Francese) che non specificano ITA.
     if (hasIta) return true;
-
-    // Se dice Multi, ma c'è scritto French/German e NON Ita -> SCARTA
-    const isForeignMulti = t.includes("FRENCH") || t.includes("GERMAN") || t.includes("SPANISH");
-    if (hasMulti && isForeignMulti && !hasIta) return false;
-
-    // Se non c'è né ITA né MULTI -> SCARTA (Probabile solo ENG)
-    if (!hasIta && !hasMulti) return false;
-
-    // Se è Multi generico, lo facciamo passare (spesso contiene ITA)
-    if (hasMulti) return true; 
 
     return false;
 }
 
-// --- SMART MATCHING LOGIC ---
-function isExactEpisodeMatch(torrentTitle, season, episode) {
-    if (!torrentTitle) return false;
-    const title = torrentTitle.toLowerCase();
-    const s = season;
-    const e = episode;
-    const sStr = String(s).padStart(2, '0');
-    const eStr = String(e).padStart(2, '0');
+// --- METADATA HANDLER (TMDB + CINEMETA FALLBACK) ---
+async function getCinemetaMetadata(id, type) {
+    try {
+        const cleanId = id.split(':')[0]; // Rimuove stagioni/episodi se presenti
+        console.log(`🛡️ Fallback su Cinemeta per ID: ${cleanId}`);
+        const res = await axios.get(`${CINEMETA_URL}/meta/${type}/${cleanId}.json`, { timeout: 4000 });
+        const meta = res.data.meta;
+        if (!meta) return null;
+        return {
+            title: meta.name,
+            originalTitle: meta.name,
+            year: meta.year ? (meta.year.includes('–') ? meta.year.split('–')[0] : meta.year) : null,
+            isSeries: type === 'series'
+        };
+    } catch (e) {
+        console.error("⚠️ Cinemeta Fallback fallito:", e.message);
+        return null;
+    }
+}
 
-    const exactPatterns = [
-        new RegExp(`s${sStr}e${eStr}`, 'i'),
-        new RegExp(`${s}x${eStr}`, 'i'),
-        new RegExp(`s${sStr}\\.?e${eStr}`, 'i')
-    ];
-    if (exactPatterns.some(p => p.test(title))) return true;
+async function getMetadata(id, type, tmdbKey) {
+    let seasonNum = 1, episodeNum = 1, tmdbId = id;
 
-    const rangePattern = new RegExp(`s${sStr}e(\\d{1,2})\\s*[-–—]\\s*e?(\\d{1,2})`, 'i');
-    const rangeMatch = title.match(rangePattern);
-    if (rangeMatch) {
-        const start = parseInt(rangeMatch[1]);
-        const end = parseInt(rangeMatch[2]);
-        if (e >= start && e <= end) return true;
+    // Parsing ID Serie (tt123:1:1)
+    if (type === 'series' && id.includes(':')) {
+        const parts = id.split(':');
+        tmdbId = parts[0]; 
+        seasonNum = parseInt(parts[1]); 
+        episodeNum = parseInt(parts[2]);
     }
 
-    const packPatterns = [
-        new RegExp(`stagione\\s*${s}(?!\\d)`, 'i'),
-        new RegExp(`season\\s*${s}(?!\\d)`, 'i'),
-        new RegExp(`s${sStr}\\s*(?:completa|complete|pack)`, 'i'),
-        new RegExp(`s${sStr}\\s*$`, 'i')
-    ];
-    if (packPatterns.some(p => p.test(title))) return true;
+    // 1. TENTATIVO TMDB (Priorità ITA)
+    try {
+        if (tmdbKey) {
+            let details;
+            if (tmdbId.startsWith('tt')) {
+                const res = await axios.get(`https://api.themoviedb.org/3/find/${tmdbId}?api_key=${tmdbKey}&language=it-IT&external_source=imdb_id`, { timeout: 3000 });
+                details = (type === 'movie') ? res.data.movie_results[0] : res.data.tv_results[0];
+            } else if (tmdbId.startsWith('tmdb:')) {
+                const cleanId = tmdbId.split(':')[1];
+                const res = await axios.get(`https://api.themoviedb.org/3/${type === 'movie' ? 'movie' : 'tv'}/${cleanId}?api_key=${tmdbKey}&language=it-IT`, { timeout: 3000 });
+                details = res.data;
+            }
 
+            if (details) {
+                return {
+                    title: details.title || details.name, 
+                    originalTitle: details.original_title || details.original_name, 
+                    year: (details.release_date || details.first_air_date)?.split('-')[0],
+                    isSeries: type === 'series', 
+                    season: seasonNum, 
+                    episode: episodeNum
+                };
+            }
+        }
+    } catch (e) { console.log("⚠️ TMDB Irraggiungibile/Key errata. Attivazione backup..."); }
+
+    // 2. TENTATIVO CINEMETA (Backup)
+    if (tmdbId.startsWith('tt')) {
+        const cinemeta = await getCinemetaMetadata(tmdbId, type);
+        if (cinemeta) {
+            return { ...cinemeta, season: seasonNum, episode: episodeNum };
+        }
+    }
+
+    return null;
+}
+
+// --- CATALOG HANDLER (PAGINAZIONE + SMART CACHE) ---
+async function generateCatalog(type, id, config, skip = 0) {
+    const page = Math.floor(skip / 20) + 1;
+    const cacheKey = `catalog:${type}:${id}:${page}`;
+
+    if (internalCache.has(cacheKey)) return internalCache.get(cacheKey);
+
+    if (id === "tmdb_trending" && config.tmdb) {
+        try {
+            console.log(`📚 Richiesta Catalogo Pagina ${page}`);
+            const r = await axios.get(`https://api.themoviedb.org/3/trending/movie/day?api_key=${config.tmdb}&language=it-IT&page=${page}`);
+            
+            const result = { 
+                metas: r.data.results.map(m => ({
+                    id: `tmdb:${m.id}`,
+                    type: "movie",
+                    name: m.title,
+                    poster: `https://image.tmdb.org/t/p/w500${m.poster_path}`,
+                    description: m.overview
+                })),
+                // Cache standard per cataloghi riusciti
+                cacheMaxAge: 14400, // 4 ore
+                staleRevalidate: 86400 
+            };
+            internalCache.set(cacheKey, result);
+            return result;
+        } catch (e) { 
+            console.error("Errore Catalogo:", e.message);
+            // In caso di errore, cache molto breve (1 min)
+            return { metas: [], cacheMaxAge: 60, staleRevalidate: 0 }; 
+        }
+    }
+    return { metas: [], cacheMaxAge: 3600 };
+}
+
+// --- STREAM HANDLER ---
+function isExactEpisodeMatch(torrentTitle, season, episode) {
+    if (!torrentTitle) return false;
+    const t = torrentTitle.toLowerCase();
+    const s = String(season).padStart(2, '0');
+    const e = String(episode).padStart(2, '0');
+
+    // Pattern S01E01, 1x01, ecc.
+    if (new RegExp(`s${s}e${e}`, 'i').test(t)) return true;
+    if (new RegExp(`${season}x${e}`, 'i').test(t)) return true;
+    
+    // Pattern Stagione Completa
+    if (new RegExp(`stagione\\s*${season}(?!\\d)`, 'i').test(t)) return true;
+    if (new RegExp(`season\\s*${season}(?!\\d)`, 'i').test(t)) return true;
+    
     return false;
 }
 
 function extractStreamInfo(title) {
     const t = title.toLowerCase();
     let quality = "Unknown";
-    if (t.includes("2160p") || t.includes("4k")) quality = "4k";
-    else if (t.includes("1080p")) quality = "1080p";
-    else if (t.includes("720p")) quality = "720p";
-    else if (t.includes("480p") || t.includes("sd")) quality = "SD";
-    else if (t.includes("dvdrip")) quality = "DVD";
+    if (/2160p|4k/.test(t)) quality = "4k";
+    else if (/1080p/.test(t)) quality = "1080p";
+    else if (/720p/.test(t)) quality = "720p";
+    else if (/480p|sd/.test(t)) quality = "SD";
+    else if (/dvdrip/.test(t)) quality = "DVD";
 
     let extra = [];
-    if (t.includes("hdr") || t.includes("10bit")) extra.push("HDR");
-    if (t.includes("dolby") || t.includes("vision")) extra.push("DV");
-    if (t.includes("hevc") || t.includes("x265")) extra.push("HEVC");
-    if (t.includes("5.1") || t.includes("ac3")) extra.push("5.1");
+    if (/hdr|10bit/.test(t)) extra.push("HDR");
+    if (/dolby|vision/.test(t)) extra.push("DV");
+    if (/hevc|x265/.test(t)) extra.push("HEVC");
+    if (/5.1|ac3/.test(t)) extra.push("5.1");
 
     let lang = [];
     if (t.includes("ita")) lang.push("ITA 🇮🇹");
-    if (t.includes("multi")) lang.push("MULTI 🌐");
+    // Ora MULTI lo mettiamo solo se c'è anche ITA, dato che abbiamo filtrato tutto prima
+    if (t.includes("multi") && t.includes("ita")) lang.push("MULTI 🌐");
     
     return { quality, lang, extraInfo: extra.join(" | ") };
 }
 
-async function getMetadata(id, type, tmdbKey) {
-    try {
-        let tmdbId = id;
-        let seasonNum, episodeNum;
-        if (type === 'series' && id.includes(':')) {
-            const parts = id.split(':');
-            tmdbId = parts[0]; seasonNum = parseInt(parts[1]); episodeNum = parseInt(parts[2]);
-        }
-        let details;
-        if (tmdbId.startsWith('tt')) {
-            const res = await axios.get(`https://api.themoviedb.org/3/find/${tmdbId}?api_key=${tmdbKey}&language=it-IT&external_source=imdb_id`);
-            if (type === 'movie') details = res.data.movie_results[0];
-            else details = res.data.tv_results[0];
-        } else if (tmdbId.startsWith('tmdb:')) {
-            const cleanId = tmdbId.split(':')[1];
-            const res = await axios.get(`https://api.themoviedb.org/3/${type === 'movie' ? 'movie' : 'tv'}/${cleanId}?api_key=${tmdbKey}&language=it-IT`);
-            details = res.data;
-        }
-        if (details) {
-            return {
-                title: details.title || details.name, 
-                originalTitle: details.original_title || details.original_name, 
-                year: (details.release_date || details.first_air_date)?.split('-')[0],
-                isSeries: type === 'series', season: seasonNum, episode: episodeNum
-            };
-        }
-        return null;
-    } catch (e) { return null; }
-}
-
-async function generateCatalog(type, id, config) {
-    const cacheKey = `catalog:${type}:${id}`;
-    if (catalogCache.has(cacheKey)) return catalogCache.get(cacheKey);
-
-    if (id === "tmdb_trending" && config.tmdb) {
-        try {
-            const r = await axios.get(`https://api.themoviedb.org/3/trending/movie/day?api_key=${config.tmdb}&language=it-IT`);
-            const result = { metas: r.data.results.map(m => ({
-                id: `tmdb:${m.id}`, type: "movie", name: m.title, poster: `https://image.tmdb.org/t/p/w500${m.poster_path}`
-            }))};
-            catalogCache.set(cacheKey, result);
-            return result;
-        } catch (e) { return { metas: [] }; }
-    }
-    return { metas: [] };
-}
-
-// --- STREAM HANDLER ---
 async function generateStream(type, id, config, userConfStr) {
     const { rd, tmdb } = config || {};
     const filters = config.filters || {}; 
-    const cacheKey = `stream:${userConfStr}:${type}:${id}`;
 
-    if (streamCache.has(cacheKey)) {
-        console.log(`🚀 STREAM CACHED: ${id}`);
-        return streamCache.get(cacheKey);
+    // Cache Key univoca
+    const cacheKey = `stream:${userConfStr}:${type}:${id}`;
+    if (internalCache.has(cacheKey)) {
+        console.log(`🚀 STREAM CACHED (RAM): ${id}`);
+        return internalCache.get(cacheKey);
     }
 
     console.log(`⚡ STREAM LIVE: ${id}`);
-    if (!rd || !tmdb) return { streams: [{ title: "⚠️ Configurazione mancante" }] };
+    if (!rd) return { streams: [{ title: "⚠️ Configura RealDebrid" }], cacheMaxAge: 300 };
 
     try {
         const metadata = await getMetadata(id, type, tmdb);
-        if (!metadata) return { streams: [{ title: "⚠️ Metadata non trovato" }] };
+        if (!metadata) return { streams: [{ title: "⚠️ Metadata non trovato" }], cacheMaxAge: 300 };
 
         let queries = [];
-        
-        // --- COSTRUZIONE QUERY ---
+        // Costruzione Query Intelligente
         if (metadata.isSeries) {
             const s = String(metadata.season).padStart(2, '0');
             const e = String(metadata.episode).padStart(2, '0');
-            // Titolo Italiano
             queries.push(`${metadata.title} S${s}E${e}`);
             queries.push(`${metadata.title} Stagione ${metadata.season}`);
-            
-            // Titolo Originale (Per Knaben)
             if (metadata.originalTitle && metadata.originalTitle !== metadata.title) {
                 queries.push(`${metadata.originalTitle} S${s}E${e}`);
             }
         } else {
-            // Film
             queries.push(`${metadata.title} ${metadata.year}`);
             if (metadata.originalTitle && metadata.originalTitle !== metadata.title) {
                 queries.push(`${metadata.originalTitle} ${metadata.year}`);
@@ -222,43 +287,42 @@ async function generateStream(type, id, config, userConfStr) {
         }
         queries = [...new Set(queries)];
         
+        // Esecuzione parallela ma LIMITATA dal Bottleneck
         let promises = [];
-
-        // 1. GRUPPO ITA (Priority): Corsaro, UIndex, TorrentMagnet
-        // TorrentMagnet ora riceve la query "base" e ci aggiunge " ITA" da solo.
         queries.forEach(q => {
-            promises.push(Corsaro.searchMagnet(q, metadata.year).catch(()=>[]));
-            promises.push(UIndex.searchMagnet(q, metadata.year).catch(()=>[]));
-            promises.push(TorrentMagnet.searchMagnet(q, metadata.year).catch(()=>[]));
+            // Priorità ITA
+            promises.push(scraperLimiter.schedule(() => Corsaro.searchMagnet(q, metadata.year).catch(()=>[])));
+            promises.push(scraperLimiter.schedule(() => UIndex.searchMagnet(q, metadata.year).catch(()=>[])));
+            promises.push(scraperLimiter.schedule(() => TorrentMagnet.searchMagnet(q, metadata.year).catch(()=>[])));
         });
 
-        // 2. KNABEN (Backup Global)
-        // Usa la query originale (spesso inglese) ma poi passa la DOGANA
+        // Knaben (Global Backup) se non "Solo ITA"
         if (!filters.onlyIta) {
-            let globalQuery = queries.length > 1 ? queries[queries.length - 1] : queries[0]; 
-            if (metadata.originalTitle) {
-                if(metadata.isSeries) {
-                    const s = String(metadata.season).padStart(2, '0');
-                    const e = String(metadata.episode).padStart(2, '0');
-                    globalQuery = `${metadata.originalTitle} S${s}E${e}`;
-                } else {
-                    globalQuery = `${metadata.originalTitle} ${metadata.year}`;
-                }
+            let globalQuery = queries.length > 1 ? queries[queries.length - 1] : queries[0];
+            if (metadata.originalTitle && metadata.isSeries) {
+                const s = String(metadata.season).padStart(2, '0');
+                const e = String(metadata.episode).padStart(2, '0');
+                globalQuery = `${metadata.originalTitle} S${s}E${e}`;
             }
-            promises.push(Knaben.searchMagnet(globalQuery, metadata.year).catch(()=>[]));
+            promises.push(scraperLimiter.schedule(() => Knaben.searchMagnet(globalQuery, metadata.year).catch(()=>[])));
         }
 
         const resultsArray = await Promise.all(promises);
         let allResults = resultsArray.flat();
 
-        if (allResults.length === 0) return { streams: [{ title: `🚫 Nessun risultato` }] };
+        if (allResults.length === 0) {
+            return { 
+                streams: [{ title: `🚫 Nessun risultato trovato` }], 
+                cacheMaxAge: 300, // Riprova tra 5 min
+                staleRevalidate: 0 
+            };
+        }
 
-        // --- FILTRAGGIO DOGANALE E DEDUPLICAZIONE ---
+        // Filtri e Deduplicazione
         let uniqueResults = [];
         const magnetSet = new Set();
         
         for (const item of allResults) {
-            // 👮‍♂️ DOGANA
             if (!isSafeForItalian(item)) continue;
 
             const hashMatch = item.magnet.match(/btih:([A-F0-9]{40})/i);
@@ -269,7 +333,6 @@ async function generateStream(type, id, config, userConfStr) {
             }
         }
 
-        // INTELLIGENT FILTERING
         if (metadata.isSeries) {
             uniqueResults = uniqueResults.filter(item => isExactEpisodeMatch(item.title, metadata.season, metadata.episode));
         }
@@ -283,31 +346,24 @@ async function generateStream(type, id, config, userConfStr) {
         uniqueResults.sort((a, b) => (b.sizeBytes || 0) - (a.sizeBytes || 0));
         const topResults = uniqueResults.slice(0, 20); 
 
-        // RESOLVE DEBRID
+        // Unrestricted Link (RealDebrid)
         let streams = [];
         for (const item of topResults) {
             try {
                 const streamData = await RD.getStreamLink(config.rd, item.magnet);
                 
+                // Salta se è un RAR o file troppo piccolo (sample)
                 if (streamData && streamData.type === 'ready' && streamData.size < REAL_SIZE_FILTER) continue; 
 
                 const fileTitle = streamData?.filename || item.title;
                 const { quality, lang, extraInfo } = extractStreamInfo(fileTitle);
                 
-                let displayLang = lang.join(" / ");
-                if (!displayLang) {
-                     // Poiché abbiamo filtrato tutto rigidamente, se siamo qui è ITA
-                     displayLang = "ITA 🇮🇹";
-                }
-
-                let nameTag = `[RD ⚡] ${item.source}`;
-                if (!streamData) nameTag = `[RD ⏳] ${item.source}`;
+                let displayLang = lang.join(" / ") || "ITA 🇮🇹";
+                let nameTag = streamData ? `[RD ⚡] ${item.source}` : `[RD ⏳] ${item.source}`;
                 nameTag += `\n${quality}`;
-
                 let finalSize = streamData?.size ? formatBytes(streamData.size) : (item.size || "?? GB");
 
-                let titleStr = `📄 ${fileTitle}\n`;
-                titleStr += `💾 ${finalSize}`;
+                let titleStr = `📄 ${fileTitle}\n💾 ${finalSize}`;
                 if (extraInfo) titleStr += ` | ${extraInfo}`;
                 titleStr += `\n⚙️ ${item.source}\n`;
                 titleStr += `🔊 ${displayLang}`;
@@ -327,18 +383,29 @@ async function generateStream(type, id, config, userConfStr) {
                         behaviorHints: { notWebReady: true }
                     });
                 }
-                await wait(50); 
+                await wait(50); // Piccolo delay gentile
             } catch (e) {}
         }
 
-        const finalResponse = streams.length === 0 ? { streams: [{ title: "🚫 Nessun file valido trovato." }] } : { streams };
-        streamCache.set(cacheKey, finalResponse);
+        const finalResponse = { 
+            streams: streams.length > 0 ? streams : [{ title: "🚫 Nessun file valido." }],
+            // Cache intelligente:
+            // Se abbiamo risultati: cache 30 min, stale 1 ora
+            // Se vuoto: cache corta (definita sopra)
+            cacheMaxAge: streams.length > 0 ? 1800 : 120, 
+            staleRevalidate: streams.length > 0 ? 3600 : 0
+        };
+
+        internalCache.set(cacheKey, finalResponse);
         return finalResponse;
+
     } catch (error) {
         console.error("🔥 Errore fatale:", error.message);
-        return { streams: [{ title: "Errore Interno Addon" }] };
+        return { streams: [{ title: "Errore Interno Addon" }], cacheMaxAge: 60 };
     }
 }
+
+// --- ROUTES EXPRESS ---
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
@@ -353,24 +420,50 @@ app.get('/:userConf/manifest.json', (req, res) => {
     res.json(m);
 });
 
+// ROUTE CATALOGO (Gestisce SKIP + Cache Headers)
+app.get('/:userConf/catalog/:type/:id/:extra?.json', async (req, res) => {
+    let skip = 0;
+    if (req.params.extra) {
+        const match = req.params.extra.match(/skip=(\d+)/);
+        if (match) skip = parseInt(match[1]);
+    }
+    
+    const result = await generateCatalog(req.params.type, req.params.id, getConfig(req.params.userConf), skip);
+    
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    
+    // Applica header cache dinamici
+    applyCacheHeaders(res, result);
+    
+    // Pulisci l'oggetto JSON da inviare a Stremio (rimuovi campi tecnici cache)
+    const { cacheMaxAge, staleRevalidate, staleError, ...cleanResult } = result;
+    res.json(cleanResult);
+});
+
+// Compatibilità vecchia route
 app.get('/:userConf/catalog/:type/:id.json', async (req, res) => {
     const result = await generateCatalog(req.params.type, req.params.id, getConfig(req.params.userConf));
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'public, max-age=43200');
-    res.json(result);
+    applyCacheHeaders(res, result);
+    const { cacheMaxAge, staleRevalidate, staleError, ...cleanResult } = result;
+    res.json(cleanResult);
 });
 
+// ROUTE STREAM (Gestisce Cache Headers)
 app.get('/:userConf/stream/:type/:id.json', async (req, res) => {
-    const streams = await generateStream(
+    const result = await generateStream(
         req.params.type, 
         req.params.id.replace('.json', ''), 
         getConfig(req.params.userConf),
         req.params.userConf 
     );
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'public, max-age=1800');
-    res.json(streams);
+    
+    applyCacheHeaders(res, result);
+
+    const { cacheMaxAge, staleRevalidate, staleError, ...cleanResult } = result;
+    res.json(cleanResult);
 });
 
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`Addon The Brain v23.8.0 avviato su porta ${PORT}!`));
+app.listen(PORT, () => console.log(`Addon The Brain v24.0.1 (Strict Mode) avviato su porta ${PORT}!`));
