@@ -16,20 +16,21 @@ const External = require("./external");
 // --- COSTANTI & CONFIGURAZIONE ---
 const CINEMETA_URL = 'https://v3-cinemeta.strem.io';
 const REAL_SIZE_FILTER = 150 * 1024 * 1024; // 150MB
-const TIMEOUT_TMDB = 4000;
+const TIMEOUT_TMDB = 3000;
+const SCRAPER_TIMEOUT = 2800; // 2.8 Secondi MAX per ogni scraper: se è lento, lo saltiamo.
 
 const internalCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 
-// LIMITATORE SCRAPER
+// ⚡ LIMITATORE ULTRASONICO
 const scraperLimiter = new Bottleneck({
-    maxConcurrent: 5,
-    minTime: 200
+    maxConcurrent: 20, // MASSIMO PARALLELISMO
+    minTime: 20        // QUASI ZERO ATTESA
 });
 
-// LIMITATORE REAL-DEBRID (Veloce per evitare timeout)
+// LIMITATORE REAL-DEBRID
 const rdLimiter = new Bottleneck({
-    maxConcurrent: 1,
-    minTime: 160 
+    maxConcurrent: 3,  
+    minTime: 50 
 });
 
 const app = express();
@@ -39,9 +40,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 // --- MANIFEST ---
 const manifestBase = {
     id: "org.community.corsaro-brain-ita-strict-restore",
-    version: "25.3.0", // Update: Sorting by Size
-    name: "Corsaro + TorrentMagnet (SIZE SORTING)",
-    description: "🇮🇹 Motore V25.3.0: Brain Full v3. Ordinamento per DIMENSIONE (Dal più grande al più piccolo).",
+    version: "25.5.0", // Lightspeed Edition
+    name: "Corsaro + TorrentMagnet (LIGHTSPEED)",
+    description: "🇮🇹 Motore V25.5.0: Hard Timeout 2.8s. Query Ottimizzate. Nessun collo di bottiglia.",
     resources: ["catalog", "stream"],
     types: ["movie", "series"],
     catalogs: [
@@ -63,26 +64,18 @@ function formatBytes(bytes) {
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 }
 
-// Nuova funzione per capire la dimensione e ordinare
 function parseSize(sizeStr) {
     if (!sizeStr) return 0;
     if (typeof sizeStr === 'number') return sizeStr;
-    
-    // Rimuove spazi e converte virgole in punti
     let cleanStr = sizeStr.toString().replace(/,/g, '.').toUpperCase();
-    
-    // Estrae numero e unità
     const match = cleanStr.match(/([\d.]+)\s*([KMGTP]?B)/);
     if (!match) return 0;
-    
     let val = parseFloat(match[1]);
     const unit = match[2];
-
     if (unit.includes('TB')) return val * 1024 * 1024 * 1024 * 1024;
     if (unit.includes('GB')) return val * 1024 * 1024 * 1024;
     if (unit.includes('MB')) return val * 1024 * 1024;
     if (unit.includes('KB')) return val * 1024;
-    
     return val;
 }
 
@@ -103,90 +96,75 @@ function applyCacheHeaders(res, data) {
     if (parts.length > 0) res.setHeader('Cache-Control', `${parts.join(', ')}, public`);
 }
 
+// WRAPPER PER TIMEOUT (Il segreto della velocità)
+function withTimeout(promise, ms) {
+    const timeout = new Promise((resolve) => setTimeout(() => resolve([]), ms));
+    return Promise.race([promise, timeout]);
+}
+
 // ═══════════════════════════════════════════════════════════════════
-// BRAIN QUERY ENGINE v3 – SERIE TV
+// BRAIN QUERY ENGINE v4 (LIGHTSPEED) - Meno query, più mirate
 // ═══════════════════════════════════════════════════════════════════
 function buildSeriesQueriesForSeries(metadata) {
     const title = metadata.title.trim();
     const original = (metadata.originalTitle || "").trim();
-    const year = metadata.year || "";
     const season = String(metadata.season).padStart(2, '0');
     const episode = String(metadata.episode).padStart(2, '0');
     let queries = new Set();
 
+    // Priorità assoluta
     queries.add(`${title} S${season}E${episode}`);
     queries.add(`${title} ${season}x${episode}`);
-    queries.add(`${title} Stagione ${metadata.season} Episodio ${metadata.episode}`);
-
-    queries.add(`${title} S${season}E${episode} ITA`);
-    queries.add(`${title} ${season}x${episode} ITA`);
-    queries.add(`${title} S${season}E${episode} 1080p`);
-
-    if (metadata.episode === 1) {
-        queries.add(`${title} Stagione ${metadata.season} Completa`);
-        queries.add(`${title} Stagione ${metadata.season} ITA`);
-        queries.add(`${title} S${season} Completa`);
-    }
-
+    
+    // Se titolo originale diverso, usalo (fondamentale per serie straniere)
     if (original && original !== title) {
         queries.add(`${original} S${season}E${episode}`);
-        queries.add(`${original} ${season}x${episode}`);
-        if (year) queries.add(`${original} ${year} S${season}E${episode}`);
     }
 
+    // Pack stagionale
+    if (metadata.episode === 1) {
+        queries.add(`${title} Stagione ${metadata.season}`);
+    }
+
+    // Alias famosi (ridotti all'essenziale)
     const abbreviations = {
-        "The Walking Dead": ["TWD"], "Game of Thrones": ["GoT", "GOT"], "Breaking Bad": ["BB"],
-        "Stranger Things": ["ST"], "The Boys": ["Boys"], "House of the Dragon": ["HotD", "HOD"],
-        "The Last of Us": ["TLOU"], "Loki": ["Loki"], "Wandavision": ["WandaVision"],
-        "The Mandalorian": ["Mando"], "One Piece": ["OnePiece", "OP"], "Attack on Titan": ["AoT"],
-        "Demon Slayer": ["Kimetsu"], "Jujutsu Kaisen": ["JJK"], "Chainsaw Man": ["CSM"]
+        "The Walking Dead": "TWD", "Game of Thrones": "GoT", "Breaking Bad": "BB",
+        "Stranger Things": "ST", "The Boys": "Boys", "House of the Dragon": "HotD",
+        "The Last of Us": "TLOU", "Loki": "Loki", "One Piece": "OnePiece", 
+        "Attack on Titan": "AoT", "Demon Slayer": "Kimetsu", "Jujutsu Kaisen": "JJK"
     };
 
-    for (const [full, abbs] of Object.entries(abbreviations)) {
-        if (title.toLowerCase().includes(full.toLowerCase()) || (original && original.toLowerCase().includes(full.toLowerCase()))) {
-            abbs.forEach(abb => {
-                queries.add(`${abb} S${season}E${episode}`);
-                queries.add(`${abb} S${season}E${episode} ITA`);
-            });
+    for (const [full, abb] of Object.entries(abbreviations)) {
+        if (title.toLowerCase().includes(full.toLowerCase())) {
+            queries.add(`${abb} S${season}E${episode}`);
         }
     }
-
-    queries.add(`${title.replace(/[^\w]/g, ".")}S${season}E${episode}`);
     return Array.from(queries);
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// BRAIN QUERY ENGINE v3 – FILM
-// ═══════════════════════════════════════════════════════════════════
 function buildMovieQueries(metadata) {
     const title = metadata.title.trim();
     const original = (metadata.originalTitle || "").trim();
     const year = metadata.year || "";
     let queries = new Set();
 
+    // 1. Titolo Anno (Standard) - Trova il 90% dei film
     queries.add(`${title} ${year}`);
+
+    // 2. Titolo ITA (Se il titolo base non ha accenti strani o è inglese)
+    // Se cerchiamo "The Conjuring", aggiungere "The Conjuring ITA" aiuta.
+    if (!title.toUpperCase().includes("ITA")) {
+        queries.add(`${title} ITA`);
+    }
+
+    // 3. Titolo Originale (Solo se diverso)
     if (original && original !== title) {
         queries.add(`${original} ${year}`);
     }
 
-    queries.add(`${title} ${year} ITA`);
-    queries.add(`${title} ITA`); 
-    if (original && original !== title) {
-        queries.add(`${original} ${year} ITA`);
-    }
-
-    queries.add(`${title} ${year} Multi`);
-    queries.add(`${title} Multi`);
-
-    queries.add(`${title} ${year} 1080p`);
-    queries.add(`${title} ${year} 4k`);
-    queries.add(`${title} ${year} UHD`);
-
-    const cleanTitle = title.replace(/['’:\-]/g, " ").replace(/\s+/g, " ").trim();
-    if (cleanTitle !== title) {
-        queries.add(`${cleanTitle} ${year}`);
-        queries.add(`${cleanTitle} ${year} ITA`);
-    }
+    // NOTA: Non cerchiamo più "4k", "Multi", "UHD" esplicitamente.
+    // I risultati 4K/Multi escono comunque con la query "Titolo Anno".
+    // Filtrarli qui rallenta solo il processo.
 
     return Array.from(queries);
 }
@@ -195,8 +173,10 @@ function buildMovieQueries(metadata) {
 function isSafeForItalian(item) {
     if (item.source === "Corsaro") return true;
     const t = item.title.toUpperCase();
-    const hasIta = t.includes("ITA") || t.includes("ITALIAN") || t.includes("IT-EN") || (t.includes("MULTI") && !t.includes("FRENCH") && !t.includes("SPANISH"));
+    const hasIta = t.includes("ITA") || t.includes("ITALIAN") || t.includes("IT-EN") || (t.includes("MULTI") && !t.includes("FRENCH"));
     if (hasIta) return true;
+    if (item.source === "Brain P2P" && !t.includes("VOST")) return true;
+    
     const isForeignOnly = (t.includes("ENG") || t.includes("VOST") || t.includes("VOSUB")) && !t.includes("MULTI");
     if (isForeignOnly) return false;
     return false; 
@@ -336,32 +316,27 @@ async function generateStream(type, id, config, userConfStr) {
         if (!metadata) return { streams: [{ title: "⚠️ Metadata non trovato" }], cacheMaxAge: 300 };
 
         let queries = [];
-
-        // --- BRAIN QUERY ENGINE v3 (FULL) ---
         if (metadata.isSeries) {
             queries = buildSeriesQueriesForSeries(metadata);
         } else {
             queries = buildMovieQueries(metadata);
         }
         
-        if (onlyIta) {
-            const strictVersions = queries.map(q => {
-                 if (!q.toUpperCase().includes("ITA")) return q + " ITA";
-                 return q;
-            });
-            queries = [...queries, ...strictVersions];
-        }
-
+        // Pulizia doppioni finale
         queries = [...new Set(queries)];
-        console.log(`🧠 Brain Engine v3 - Query generate: ${queries.length} varianti`);
+        
+        console.log(`🧠 Brain Engine v4 (Lightspeed) - Query: ${queries.length} varianti`);
 
-        // --- FASE 1: SCRAPER INTERNI ---
+        // --- FASE 1: SCRAPER INTERNI CON HARD TIMEOUT ---
         let internalPromises = [];
+        
         queries.forEach(q => {
-            internalPromises.push(scraperLimiter.schedule(() => Corsaro.searchMagnet(q, metadata.year).catch(() => [])));
-            internalPromises.push(scraperLimiter.schedule(() => UIndex.searchMagnet(q, metadata.year).catch(() => [])));
-            internalPromises.push(scraperLimiter.schedule(() => Knaben.searchMagnet(q, metadata.year).catch(() => [])));
-            internalPromises.push(scraperLimiter.schedule(() => TorrentMagnet.searchMagnet(q, metadata.year).catch(() => [])));
+            // Avvolgiamo ogni chiamata in "withTimeout"
+            // Se Corsaro/UIndex/Knaben ci mettono più di 2.8 secondi, vengono uccisi.
+            internalPromises.push(scraperLimiter.schedule(() => withTimeout(Corsaro.searchMagnet(q, metadata.year), SCRAPER_TIMEOUT).catch(() => [])));
+            internalPromises.push(scraperLimiter.schedule(() => withTimeout(UIndex.searchMagnet(q, metadata.year), SCRAPER_TIMEOUT).catch(() => [])));
+            internalPromises.push(scraperLimiter.schedule(() => withTimeout(Knaben.searchMagnet(q, metadata.year), SCRAPER_TIMEOUT).catch(() => [])));
+            internalPromises.push(scraperLimiter.schedule(() => withTimeout(TorrentMagnet.searchMagnet(q, metadata.year), SCRAPER_TIMEOUT).catch(() => [])));
         });
 
         const internalResultsRaw = (await Promise.all(internalPromises)).flat();
@@ -375,19 +350,20 @@ async function generateStream(type, id, config, userConfStr) {
         let allResults = [...validInternalResults];
         console.log(`🔍 Risultati Interni Validi: ${validInternalResults.length}`);
 
-        // --- FASE 2: EXTERNAL ---
+        // --- FASE 2: EXTERNAL (Solo se strettamente necessario e con timeout stretto) ---
         if (validInternalResults.length <= 4) {
-            console.log("🚨 Pochi risultati interni. Attivo External Brain (Stealth Mode)...");
-            const imdbId = (id.startsWith('tt')) ? id.split(':')[0] : null;
+            // Solo 1 query principale per External per fare presto
             const mainQuery = queries[0]; 
+            const imdbId = (id.startsWith('tt')) ? id.split(':')[0] : null;
             try {
-                let externalResults = await External.searchMagnet(id, type, imdbId, mainQuery);
+                let externalResults = await withTimeout(External.searchMagnet(id, type, imdbId, mainQuery), SCRAPER_TIMEOUT);
                 externalResults = externalResults.map(item => { item.source = "Brain P2P"; return item; });
                 allResults = [...allResults, ...externalResults];
-            } catch (err) { console.error("External Error:", err.message); }
+            } catch (err) { console.error("External Timeout/Error"); }
         }
 
-        if (allResults.length === 0) return { streams: [{ title: `🚫 Nessun risultato` }], cacheMaxAge: 120 };
+        // Se 0 risultati, NON CACHIAMO (o cachiamo per pochissimo) per permettere il reload
+        if (allResults.length === 0) return { streams: [{ title: `🚫 Nessun risultato (Riprova)` }], cacheMaxAge: 10 };
 
         // --- DEDUPLICAZIONE ---
         let uniqueResults = [];
@@ -410,18 +386,15 @@ async function generateStream(type, id, config, userConfStr) {
         if (filters.no4k) uniqueResults = uniqueResults.filter(i => !/2160p|4k|uhd/i.test(i.title));
         if (filters.noCam) uniqueResults = uniqueResults.filter(i => !/cam|dvdscr|hdcam|telesync|tc|ts/i.test(i.title));
 
-        // ═══════════════════════════════════════════════════════════════════
-        // ORDINAMENTO PER DIMENSIONE (Size Sorting)
-        // ═══════════════════════════════════════════════════════════════════
+        // ORDINAMENTO SIZE
         uniqueResults.sort((a, b) => {
             const sizeA = parseSize(a.size);
             const sizeB = parseSize(b.size);
-            // Ordine decrescente (B è più grande di A -> viene prima)
             return sizeB - sizeA;
         });
 
-        // --- LIMITATORE CRITICO ---
-        const topResults = uniqueResults.slice(0, 20); 
+        // Limitiamo a 70 risultati (ancora più alto)
+        const topResults = uniqueResults.slice(0, 70); 
 
         let streams = [];
         const resolutionPromises = topResults.map(item => {
@@ -458,7 +431,7 @@ async function generateStream(type, id, config, userConfStr) {
 
         const finalResponse = { 
             streams: streams.length > 0 ? streams : [{ title: "🚫 Nessun file valido su RD." }],
-            cacheMaxAge: streams.length > 0 ? 1800 : 120, 
+            cacheMaxAge: streams.length > 0 ? 1800 : 30, // Se 0 risultati, cache breve
             staleRevalidate: streams.length > 0 ? 3600 : 0
         };
         internalCache.set(cacheKey, finalResponse);
@@ -507,4 +480,4 @@ app.get('/:userConf/stream/:type/:id.json', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`Addon v25.3.0 (Size Sorting) avviato su porta ${PORT}!`));
+app.listen(PORT, () => console.log(`Addon v25.5.0 (LIGHTSPEED) avviato su porta ${PORT}!`));
