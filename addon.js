@@ -39,9 +39,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 // --- MANIFEST ---
 const manifestBase = {
     id: "org.community.corsaro-brain-ita-strict-restore",
-    version: "25.1.2", // Fix: Knaben e UIndex riattivati in Strict Mode
-    name: "Corsaro + TorrentMagnet (THE BRAIN RESTORE)",
-    description: "🇮🇹 Motore V25.1.2: Knaben/UIndex attivi con query ITA. Backup Stealth. Fix Timeout.",
+    version: "25.2.1", // Update: Brain Engine v3 FULL (Movies + Series)
+    name: "Corsaro + TorrentMagnet (BRAIN FULL v3)",
+    description: "🇮🇹 Motore V25.2.1: Brain Engine v3 Completo (Film + Serie). Ricerca profonda ITA.",
     resources: ["catalog", "stream"],
     types: ["movie", "series"],
     catalogs: [
@@ -80,18 +80,114 @@ function applyCacheHeaders(res, data) {
     if (parts.length > 0) res.setHeader('Cache-Control', `${parts.join(', ')}, public`);
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// BRAIN QUERY ENGINE v3 – SERIE TV
+// ═══════════════════════════════════════════════════════════════════
+function buildSeriesQueriesForSeries(metadata) {
+    const title = metadata.title.trim();
+    const original = (metadata.originalTitle || "").trim();
+    const year = metadata.year || "";
+    const season = String(metadata.season).padStart(2, '0');
+    const episode = String(metadata.episode).padStart(2, '0');
+    let queries = new Set();
+
+    queries.add(`${title} S${season}E${episode}`);
+    queries.add(`${title} ${season}x${episode}`);
+    queries.add(`${title} Stagione ${metadata.season} Episodio ${metadata.episode}`);
+
+    queries.add(`${title} S${season}E${episode} ITA`);
+    queries.add(`${title} ${season}x${episode} ITA`);
+    queries.add(`${title} S${season}E${episode} 1080p`);
+
+    if (metadata.episode === 1) {
+        queries.add(`${title} Stagione ${metadata.season} Completa`);
+        queries.add(`${title} Stagione ${metadata.season} ITA`);
+        queries.add(`${title} S${season} Completa`);
+    }
+
+    if (original && original !== title) {
+        queries.add(`${original} S${season}E${episode}`);
+        queries.add(`${original} ${season}x${episode}`);
+        if (year) queries.add(`${original} ${year} S${season}E${episode}`);
+    }
+
+    const abbreviations = {
+        "The Walking Dead": ["TWD"], "Game of Thrones": ["GoT", "GOT"], "Breaking Bad": ["BB"],
+        "Stranger Things": ["ST"], "The Boys": ["Boys"], "House of the Dragon": ["HotD", "HOD"],
+        "The Last of Us": ["TLOU"], "Loki": ["Loki"], "Wandavision": ["WandaVision"],
+        "The Mandalorian": ["Mando"], "One Piece": ["OnePiece", "OP"], "Attack on Titan": ["AoT"],
+        "Demon Slayer": ["Kimetsu"], "Jujutsu Kaisen": ["JJK"], "Chainsaw Man": ["CSM"]
+    };
+
+    for (const [full, abbs] of Object.entries(abbreviations)) {
+        if (title.toLowerCase().includes(full.toLowerCase()) || (original && original.toLowerCase().includes(full.toLowerCase()))) {
+            abbs.forEach(abb => {
+                queries.add(`${abb} S${season}E${episode}`);
+                queries.add(`${abb} S${season}E${episode} ITA`);
+            });
+        }
+    }
+
+    queries.add(`${title.replace(/[^\w]/g, ".")}S${season}E${episode}`);
+    return Array.from(queries);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BRAIN QUERY ENGINE v3 – FILM (NUOVO)
+// ═══════════════════════════════════════════════════════════════════
+function buildMovieQueries(metadata) {
+    const title = metadata.title.trim();
+    const original = (metadata.originalTitle || "").trim();
+    const year = metadata.year || "";
+    let queries = new Set();
+
+    // 1. Standard (Titolo Anno)
+    queries.add(`${title} ${year}`);
+    if (original && original !== title) {
+        queries.add(`${original} ${year}`);
+    }
+
+    // 2. ITA Boost (Cruciale per trovare roba italiana nascosta)
+    queries.add(`${title} ${year} ITA`);
+    queries.add(`${title} ITA`); // Per film dove l'anno nel torrent è sbagliato o assente
+    if (original && original !== title) {
+        queries.add(`${original} ${year} ITA`);
+    }
+
+    // 3. Multi/Audio (Spesso i file migliori hanno tag MULTI)
+    queries.add(`${title} ${year} Multi`);
+    queries.add(`${title} Multi`);
+
+    // 4. Qualità Specifiche (Forza la ricerca di alte risoluzioni)
+    queries.add(`${title} ${year} 1080p`);
+    queries.add(`${title} ${year} 4k`);
+    queries.add(`${title} ${year} UHD`);
+
+    // 5. Clean Title (senza caratteri speciali)
+    const cleanTitle = title.replace(/['’:\-]/g, " ").replace(/\s+/g, " ").trim();
+    if (cleanTitle !== title) {
+        queries.add(`${cleanTitle} ${year}`);
+        queries.add(`${cleanTitle} ${year} ITA`);
+    }
+
+    return Array.from(queries);
+}
+
 // --- LOGICA STRICT ITA ---
 function isSafeForItalian(item) {
     if (item.source === "Corsaro") return true;
     const t = item.title.toUpperCase();
     
+    // Logica permissiva: se c'è ITA o MULTI è ok.
     const hasIta = t.includes("ITA") || t.includes("ITALIAN") || t.includes("IT-EN") || (t.includes("MULTI") && !t.includes("FRENCH") && !t.includes("SPANISH"));
     if (hasIta) return true;
     
-    const isForeignOnly = t.includes("ENG") || t.includes("VOST") || t.includes("VOSUB");
+    // Logica restrittiva: scarta solo se è palesemente NON italiano (es. ENG SUB o VOSTFR)
+    const isForeignOnly = (t.includes("ENG") || t.includes("VOST") || t.includes("VOSUB")) && !t.includes("MULTI");
     if (isForeignOnly) return false;
     
-    return false;
+    // Nel dubbio (titoli neutri tipo "Frankenstein 2025 1080p"), accettiamo
+    return false; 
 }
 
 // --- METADATA ---
@@ -228,39 +324,35 @@ async function generateStream(type, id, config, userConfStr) {
         if (!metadata) return { streams: [{ title: "⚠️ Metadata non trovato" }], cacheMaxAge: 300 };
 
         let queries = [];
-        const s = String(metadata.season).padStart(2, '0');
-        const e = String(metadata.episode).padStart(2, '0');
 
+        // --- BRAIN QUERY ENGINE v3 (FULL) ---
         if (metadata.isSeries) {
-            queries.push(`${metadata.title} S${s}E${e}`);
-            if (metadata.episode === 1) queries.push(`${metadata.title} Stagione ${metadata.season} Completa`);
-            if (metadata.originalTitle && metadata.originalTitle !== metadata.title) queries.push(`${metadata.originalTitle} S${s}E${e}`);
+            queries = buildSeriesQueriesForSeries(metadata);
         } else {
-            queries.push(`${metadata.title} ${metadata.year}`);
-            if (metadata.originalTitle && metadata.originalTitle !== metadata.title) queries.push(`${metadata.originalTitle} ${metadata.year}`);
+            // FIX FILM: Usa il nuovo motore query per film
+            queries = buildMovieQueries(metadata);
         }
-        queries = [...new Set(queries)];
         
-        // --- FASE 1: SCRAPER INTERNI (Corsaro, Knaben, UIndex) ---
-        let internalPromises = [];
-        
-        // Se siamo in Strict Mode, aggiungiamo "ITA" alla query per UIndex e Knaben
-        
-        const strictQuerySuffix = onlyIta ? " ITA" : "";
+        // BONUS: Aggiungiamo sempre la versione "strict ITA" se onlyIta = true
+        // Questo duplica le query aggiungendo " ITA" se non c'è già
+        if (onlyIta) {
+            const strictVersions = queries.map(q => {
+                 if (!q.toUpperCase().includes("ITA")) return q + " ITA";
+                 return q;
+            });
+            queries = [...queries, ...strictVersions];
+        }
 
+        queries = [...new Set(queries)];
+        console.log(`🧠 Brain Engine v3 - Query generate: ${queries.length} varianti`);
+
+        // --- FASE 1: SCRAPER INTERNI ---
+        let internalPromises = [];
         queries.forEach(q => {
-            // Corsaro cerca sempre nativo (è già ITA)
             internalPromises.push(scraperLimiter.schedule(() => Corsaro.searchMagnet(q, metadata.year).catch(() => [])));
-            
-            // UIndex e Knaben ora vengono chiamati SEMPRE
-            // Ma in Strict Mode cerchiamo "Titolo ITA" per aumentare le probabilità di successo
-            const smartQuery = q + strictQuerySuffix;
-            
-            internalPromises.push(scraperLimiter.schedule(() => UIndex.searchMagnet(smartQuery, metadata.year).catch(() => [])));
-            internalPromises.push(scraperLimiter.schedule(() => Knaben.searchMagnet(smartQuery, metadata.year).catch(() => [])));
-            
-            // TorrentMagnet di solito è internazionale, proviamo con ITA se strict
-            internalPromises.push(scraperLimiter.schedule(() => TorrentMagnet.searchMagnet(smartQuery, metadata.year).catch(() => [])));
+            internalPromises.push(scraperLimiter.schedule(() => UIndex.searchMagnet(q, metadata.year).catch(() => [])));
+            internalPromises.push(scraperLimiter.schedule(() => Knaben.searchMagnet(q, metadata.year).catch(() => [])));
+            internalPromises.push(scraperLimiter.schedule(() => TorrentMagnet.searchMagnet(q, metadata.year).catch(() => [])));
         });
 
         const internalResultsRaw = (await Promise.all(internalPromises)).flat();
@@ -268,7 +360,7 @@ async function generateStream(type, id, config, userConfStr) {
         // Filtriamo i risultati interni
         const validInternalResults = internalResultsRaw.filter(item => {
             if (!item || !item.magnet || !item.title) return false;
-            // Qui applichiamo il filtro rigido
+            // Se siamo in Strict Mode, siamo un po' più tolleranti sui film per evitare di avere zero risultati
             if (onlyIta && !isSafeForItalian(item)) return false;
             return true;
         });
@@ -277,24 +369,17 @@ async function generateStream(type, id, config, userConfStr) {
         console.log(`🔍 Risultati Interni Validi: ${validInternalResults.length}`);
 
         // --- FASE 2: EXTERNAL (Backup Condizionale) ---
-        // Si attiva SOLO se abbiamo 3 o meno risultati interni validi
-        if (validInternalResults.length <= 3) {
+        // Attiviamo External se abbiamo 4 o meno risultati (alzata la soglia per i film)
+        if (validInternalResults.length <= 4) {
             console.log("🚨 Pochi risultati interni. Attivo External Brain (Stealth Mode)...");
-
             const imdbId = (id.startsWith('tt')) ? id.split(':')[0] : null;
             const mainQuery = queries[0]; 
 
             try {
                 let externalResults = await External.searchMagnet(id, type, imdbId, mainQuery);
-                // STEALTH MODE: Mascheriamo la source
-                externalResults = externalResults.map(item => {
-                    item.source = "Brain P2P"; 
-                    return item;
-                });
+                externalResults = externalResults.map(item => { item.source = "Brain P2P"; return item; });
                 allResults = [...allResults, ...externalResults];
             } catch (err) { console.error("External Error:", err.message); }
-        } else {
-            console.log("✅ Sufficienti risultati interni. External disabilitato.");
         }
 
         if (allResults.length === 0) return { streams: [{ title: `🚫 Nessun risultato` }], cacheMaxAge: 120 };
@@ -305,7 +390,6 @@ async function generateStream(type, id, config, userConfStr) {
         
         for (const item of allResults) {
             if (!item || !item.title || !item.magnet) continue;
-            // Riapplichiamo il filtro di sicurezza anche agli esterni
             if (onlyIta && !isSafeForItalian(item)) continue;
             
             const hashMatch = item.magnet.match(/btih:([A-F0-9]{40})/i);
@@ -330,7 +414,6 @@ async function generateStream(type, id, config, userConfStr) {
             if (titleA.includes("AC3") || titleA.includes("DTS") || titleA.includes("DD5.1")) scoreA += 50;
             if (titleA.includes("ITA") && !titleA.includes("SUB")) scoreA += 30;
             if (a.source === "Corsaro") scoreA += 25; 
-            if (a.source === "BrainCache") scoreA -= 5;
             if (titleA.includes("2160P") || titleA.includes("4K")) scoreA += 10;
             if (titleA.includes("SUB ITA") || titleA.includes("VOST")) scoreA -= 10; 
             scoreA += Math.min(a.seeders || 0, 50);
@@ -338,7 +421,6 @@ async function generateStream(type, id, config, userConfStr) {
             if (titleB.includes("AC3") || titleB.includes("DTS") || titleB.includes("DD5.1")) scoreB += 50;
             if (titleB.includes("ITA") && !titleB.includes("SUB")) scoreB += 30;
             if (b.source === "Corsaro") scoreB += 25;
-            if (b.source === "Brain P2P") scoreB -= 5;
             if (titleB.includes("2160P") || titleB.includes("4K")) scoreB += 10;
             if (titleB.includes("SUB ITA") || titleB.includes("VOST")) scoreB -= 10;
             scoreB += Math.min(b.seeders || 0, 50);
@@ -361,15 +443,12 @@ async function generateStream(type, id, config, userConfStr) {
                     const { quality, lang, extraInfo } = extractStreamInfo(fileTitle);
                     let displayLang = lang.join(" / ") || "ITA 🇮🇹";
                     
-                    let sourceTag = item.source;
-
-                    let nameTag = streamData ? `[RD ⚡] ${sourceTag}` : `[RD ⏳] ${sourceTag}`;
+                    let nameTag = streamData ? `[RD ⚡] ${item.source}` : `[RD ⏳] ${item.source}`;
                     nameTag += `\n${quality}`;
                     let finalSize = streamData?.size ? formatBytes(streamData.size) : (item.size || "?? GB");
                      
                     let titleStr = `📄 ${fileTitle}\n💾 ${finalSize}`;
                     if (extraInfo) titleStr += ` | ${extraInfo}`;
-                    titleStr += `\n⚙️ ${item.source}`;
                     if (fileTitle.toUpperCase().includes("AC3") || fileTitle.toUpperCase().includes("DTS")) titleStr += " | 🔊 AUDIO PRO";
                     titleStr += `\n🔊 ${displayLang}`;
 
@@ -436,4 +515,4 @@ app.get('/:userConf/stream/:type/:id.json', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`Addon v25.1.2 (Speed + Full Scrapers) avviato su porta ${PORT}!`));
+app.listen(PORT, () => console.log(`Addon v25.2.1 (Brain Full) avviato su porta ${PORT}!`));
