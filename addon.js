@@ -11,7 +11,7 @@ const Corsaro = require("./corsaro");
 const Knaben = require("./knaben"); 
 const TorrentMagnet = require("./torrentmagnet"); 
 const UIndex = require("./uindex"); 
-// RIMOSSO: BitSearch
+const External = require("./external"); 
 
 // --- COSTANTI & CONFIGURAZIONE ---
 const CINEMETA_URL = 'https://v3-cinemeta.strem.io';
@@ -20,17 +20,16 @@ const TIMEOUT_TMDB = 4000;
 
 const internalCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 
-// LIMITATORE SCRAPER (Verso i siti torrent)
+// LIMITATORE SCRAPER
 const scraperLimiter = new Bottleneck({
     maxConcurrent: 5,
     minTime: 200
 });
 
-// [NEW] LIMITATORE REAL-DEBRID (Per evitare Errore 429)
-// Massimo 1 richiesta ogni 350ms verso RD.
+// LIMITATORE REAL-DEBRID (Veloce per evitare timeout)
 const rdLimiter = new Bottleneck({
     maxConcurrent: 1,
-    minTime: 350 
+    minTime: 160 
 });
 
 const app = express();
@@ -39,10 +38,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // --- MANIFEST ---
 const manifestBase = {
-    id: "org.community.corsaro-brain-ita-strict-v2",
-    version: "24.3.1", // Bump versione per il fix dei risultati
-    name: "Corsaro + TorrentMagnet (THE BRAIN)",
-    description: "🇮🇹 Motore V24.3.1: Scan aumentato a 40 link. Fix Rate Limit RD. No BitSearch.",
+    id: "org.community.corsaro-brain-ita-strict-restore",
+    version: "25.1.2", // Fix: Knaben e UIndex riattivati in Strict Mode
+    name: "Corsaro + TorrentMagnet (THE BRAIN RESTORE)",
+    description: "🇮🇹 Motore V25.1.2: Knaben/UIndex attivi con query ITA. Backup Stealth. Fix Timeout.",
     resources: ["catalog", "stream"],
     types: ["movie", "series"],
     catalogs: [
@@ -86,7 +85,6 @@ function isSafeForItalian(item) {
     if (item.source === "Corsaro") return true;
     const t = item.title.toUpperCase();
     
-    // Aggiunto controllo MULTI più permissivo per trovare più risultati
     const hasIta = t.includes("ITA") || t.includes("ITALIAN") || t.includes("IT-EN") || (t.includes("MULTI") && !t.includes("FRENCH") && !t.includes("SPANISH"));
     if (hasIta) return true;
     
@@ -243,31 +241,76 @@ async function generateStream(type, id, config, userConfStr) {
         }
         queries = [...new Set(queries)];
         
-        let promises = [];
+        // --- FASE 1: SCRAPER INTERNI (Corsaro, Knaben, UIndex) ---
+        let internalPromises = [];
+        
+        // Se siamo in Strict Mode, aggiungiamo "ITA" alla query per UIndex e Knaben
+        
+        const strictQuerySuffix = onlyIta ? " ITA" : "";
+
         queries.forEach(q => {
-            promises.push(scraperLimiter.schedule(() => Corsaro.searchMagnet(q, metadata.year).catch(() => [])));
-            // BitSearch è stato rimosso
-            promises.push(scraperLimiter.schedule(() => UIndex.searchMagnet(q, metadata.year).catch(() => [])));
-            promises.push(scraperLimiter.schedule(() => TorrentMagnet.searchMagnet(q, metadata.year).catch(() => [])));
+            // Corsaro cerca sempre nativo (è già ITA)
+            internalPromises.push(scraperLimiter.schedule(() => Corsaro.searchMagnet(q, metadata.year).catch(() => [])));
+            
+            // UIndex e Knaben ora vengono chiamati SEMPRE
+            // Ma in Strict Mode cerchiamo "Titolo ITA" per aumentare le probabilità di successo
+            const smartQuery = q + strictQuerySuffix;
+            
+            internalPromises.push(scraperLimiter.schedule(() => UIndex.searchMagnet(smartQuery, metadata.year).catch(() => [])));
+            internalPromises.push(scraperLimiter.schedule(() => Knaben.searchMagnet(smartQuery, metadata.year).catch(() => [])));
+            
+            // TorrentMagnet di solito è internazionale, proviamo con ITA se strict
+            internalPromises.push(scraperLimiter.schedule(() => TorrentMagnet.searchMagnet(smartQuery, metadata.year).catch(() => [])));
         });
 
-        if (!onlyIta) {
-            let globalQuery = metadata.originalTitle || queries[0];
-            promises.push(scraperLimiter.schedule(() => Knaben.searchMagnet(globalQuery, metadata.year).catch(() => [])));
-        }
+        const internalResultsRaw = (await Promise.all(internalPromises)).flat();
 
-        const resultsArray = await Promise.all(promises);
-        let allResults = resultsArray.flat();
+        // Filtriamo i risultati interni
+        const validInternalResults = internalResultsRaw.filter(item => {
+            if (!item || !item.magnet || !item.title) return false;
+            // Qui applichiamo il filtro rigido
+            if (onlyIta && !isSafeForItalian(item)) return false;
+            return true;
+        });
+
+        let allResults = [...validInternalResults];
+        console.log(`🔍 Risultati Interni Validi: ${validInternalResults.length}`);
+
+        // --- FASE 2: EXTERNAL (Backup Condizionale) ---
+        // Si attiva SOLO se abbiamo 3 o meno risultati interni validi
+        if (validInternalResults.length <= 3) {
+            console.log("🚨 Pochi risultati interni. Attivo External Brain (Stealth Mode)...");
+
+            const imdbId = (id.startsWith('tt')) ? id.split(':')[0] : null;
+            const mainQuery = queries[0]; 
+
+            try {
+                let externalResults = await External.searchMagnet(id, type, imdbId, mainQuery);
+                // STEALTH MODE: Mascheriamo la source
+                externalResults = externalResults.map(item => {
+                    item.source = "Brain P2P"; 
+                    return item;
+                });
+                allResults = [...allResults, ...externalResults];
+            } catch (err) { console.error("External Error:", err.message); }
+        } else {
+            console.log("✅ Sufficienti risultati interni. External disabilitato.");
+        }
 
         if (allResults.length === 0) return { streams: [{ title: `🚫 Nessun risultato` }], cacheMaxAge: 120 };
 
+        // --- DEDUPLICAZIONE ---
         let uniqueResults = [];
         const magnetSet = new Set();
         
         for (const item of allResults) {
+            if (!item || !item.title || !item.magnet) continue;
+            // Riapplichiamo il filtro di sicurezza anche agli esterni
             if (onlyIta && !isSafeForItalian(item)) continue;
+            
             const hashMatch = item.magnet.match(/btih:([A-F0-9]{40})/i);
             const key = hashMatch ? hashMatch[1].toUpperCase() : item.magnet;
+            
             if (!magnetSet.has(key)) {
                 magnetSet.add(key);
                 uniqueResults.push(item);
@@ -286,14 +329,16 @@ async function generateStream(type, id, config, userConfStr) {
 
             if (titleA.includes("AC3") || titleA.includes("DTS") || titleA.includes("DD5.1")) scoreA += 50;
             if (titleA.includes("ITA") && !titleA.includes("SUB")) scoreA += 30;
-            if (a.source === "Corsaro") scoreA += 20;
+            if (a.source === "Corsaro") scoreA += 25; 
+            if (a.source === "BrainCache") scoreA -= 5;
             if (titleA.includes("2160P") || titleA.includes("4K")) scoreA += 10;
             if (titleA.includes("SUB ITA") || titleA.includes("VOST")) scoreA -= 10; 
             scoreA += Math.min(a.seeders || 0, 50);
 
             if (titleB.includes("AC3") || titleB.includes("DTS") || titleB.includes("DD5.1")) scoreB += 50;
             if (titleB.includes("ITA") && !titleB.includes("SUB")) scoreB += 30;
-            if (b.source === "Corsaro") scoreB += 20;
+            if (b.source === "Corsaro") scoreB += 25;
+            if (b.source === "Brain P2P") scoreB -= 5;
             if (titleB.includes("2160P") || titleB.includes("4K")) scoreB += 10;
             if (titleB.includes("SUB ITA") || titleB.includes("VOST")) scoreB -= 10;
             scoreB += Math.min(b.seeders || 0, 50);
@@ -301,24 +346,24 @@ async function generateStream(type, id, config, userConfStr) {
             return scoreB - scoreA;
         });
 
-        // --- MODIFICA IMPORTANTE: AUMENTATO DA 15 A 40 ---
-        // Questo permette di analizzare molti più risultati da Real-Debrid
-        const topResults = uniqueResults.slice(0, 40); 
+        // --- LIMITATORE CRITICO ---
+        const topResults = uniqueResults.slice(0, 20); 
 
         let streams = [];
-        
-        // --- LOOP DI RISOLUZIONE PROTETTO DA RATE LIMITER ---
         const resolutionPromises = topResults.map(item => {
             return rdLimiter.schedule(async () => {
                 try {
                     const streamData = await RD.getStreamLink(config.rd, item.magnet);
                     if (streamData && streamData.type === 'ready' && streamData.size < REAL_SIZE_FILTER) return null;
-                    if (streamData && streamData.filename.toLowerCase().match(/\.rar|\.zip/)) return null;
+                    if (streamData && streamData.filename && streamData.filename.toLowerCase().match(/\.rar|\.zip/)) return null;
                      
                     const fileTitle = streamData?.filename || item.title;
                     const { quality, lang, extraInfo } = extractStreamInfo(fileTitle);
                     let displayLang = lang.join(" / ") || "ITA 🇮🇹";
-                    let nameTag = streamData ? `[RD ⚡] ${item.source}` : `[RD ⏳] ${item.source}`;
+                    
+                    let sourceTag = item.source;
+
+                    let nameTag = streamData ? `[RD ⚡] ${sourceTag}` : `[RD ⏳] ${sourceTag}`;
                     nameTag += `\n${quality}`;
                     let finalSize = streamData?.size ? formatBytes(streamData.size) : (item.size || "?? GB");
                      
@@ -391,4 +436,4 @@ app.get('/:userConf/stream/:type/:id.json', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`Addon v24.3.1 (Anti-429 + Extended Scan) avviato su porta ${PORT}!`));
+app.listen(PORT, () => console.log(`Addon v25.1.2 (Speed + Full Scrapers) avviato su porta ${PORT}!`));
