@@ -39,9 +39,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 // --- MANIFEST ---
 const manifestBase = {
     id: "org.community.corsaro-brain-ita-strict-restore",
-    version: "25.2.1", // Update: Brain Engine v3 FULL (Movies + Series)
-    name: "Corsaro + TorrentMagnet (BRAIN FULL v3)",
-    description: "🇮🇹 Motore V25.2.1: Brain Engine v3 Completo (Film + Serie). Ricerca profonda ITA.",
+    version: "25.3.0", // Update: Sorting by Size
+    name: "Corsaro + TorrentMagnet (SIZE SORTING)",
+    description: "🇮🇹 Motore V25.3.0: Brain Full v3. Ordinamento per DIMENSIONE (Dal più grande al più piccolo).",
     resources: ["catalog", "stream"],
     types: ["movie", "series"],
     catalogs: [
@@ -61,6 +61,29 @@ function formatBytes(bytes) {
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+
+// Nuova funzione per capire la dimensione e ordinare
+function parseSize(sizeStr) {
+    if (!sizeStr) return 0;
+    if (typeof sizeStr === 'number') return sizeStr;
+    
+    // Rimuove spazi e converte virgole in punti
+    let cleanStr = sizeStr.toString().replace(/,/g, '.').toUpperCase();
+    
+    // Estrae numero e unità
+    const match = cleanStr.match(/([\d.]+)\s*([KMGTP]?B)/);
+    if (!match) return 0;
+    
+    let val = parseFloat(match[1]);
+    const unit = match[2];
+
+    if (unit.includes('TB')) return val * 1024 * 1024 * 1024 * 1024;
+    if (unit.includes('GB')) return val * 1024 * 1024 * 1024;
+    if (unit.includes('MB')) return val * 1024 * 1024;
+    if (unit.includes('KB')) return val * 1024;
+    
+    return val;
 }
 
 function getConfig(configStr) {
@@ -133,7 +156,7 @@ function buildSeriesQueriesForSeries(metadata) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// BRAIN QUERY ENGINE v3 – FILM (NUOVO)
+// BRAIN QUERY ENGINE v3 – FILM
 // ═══════════════════════════════════════════════════════════════════
 function buildMovieQueries(metadata) {
     const title = metadata.title.trim();
@@ -141,29 +164,24 @@ function buildMovieQueries(metadata) {
     const year = metadata.year || "";
     let queries = new Set();
 
-    // 1. Standard (Titolo Anno)
     queries.add(`${title} ${year}`);
     if (original && original !== title) {
         queries.add(`${original} ${year}`);
     }
 
-    // 2. ITA Boost (Cruciale per trovare roba italiana nascosta)
     queries.add(`${title} ${year} ITA`);
-    queries.add(`${title} ITA`); // Per film dove l'anno nel torrent è sbagliato o assente
+    queries.add(`${title} ITA`); 
     if (original && original !== title) {
         queries.add(`${original} ${year} ITA`);
     }
 
-    // 3. Multi/Audio (Spesso i file migliori hanno tag MULTI)
     queries.add(`${title} ${year} Multi`);
     queries.add(`${title} Multi`);
 
-    // 4. Qualità Specifiche (Forza la ricerca di alte risoluzioni)
     queries.add(`${title} ${year} 1080p`);
     queries.add(`${title} ${year} 4k`);
     queries.add(`${title} ${year} UHD`);
 
-    // 5. Clean Title (senza caratteri speciali)
     const cleanTitle = title.replace(/['’:\-]/g, " ").replace(/\s+/g, " ").trim();
     if (cleanTitle !== title) {
         queries.add(`${cleanTitle} ${year}`);
@@ -177,16 +195,10 @@ function buildMovieQueries(metadata) {
 function isSafeForItalian(item) {
     if (item.source === "Corsaro") return true;
     const t = item.title.toUpperCase();
-    
-    // Logica permissiva: se c'è ITA o MULTI è ok.
     const hasIta = t.includes("ITA") || t.includes("ITALIAN") || t.includes("IT-EN") || (t.includes("MULTI") && !t.includes("FRENCH") && !t.includes("SPANISH"));
     if (hasIta) return true;
-    
-    // Logica restrittiva: scarta solo se è palesemente NON italiano (es. ENG SUB o VOSTFR)
     const isForeignOnly = (t.includes("ENG") || t.includes("VOST") || t.includes("VOSUB")) && !t.includes("MULTI");
     if (isForeignOnly) return false;
-    
-    // Nel dubbio (titoli neutri tipo "Frankenstein 2025 1080p"), accettiamo
     return false; 
 }
 
@@ -329,12 +341,9 @@ async function generateStream(type, id, config, userConfStr) {
         if (metadata.isSeries) {
             queries = buildSeriesQueriesForSeries(metadata);
         } else {
-            // FIX FILM: Usa il nuovo motore query per film
             queries = buildMovieQueries(metadata);
         }
         
-        // BONUS: Aggiungiamo sempre la versione "strict ITA" se onlyIta = true
-        // Questo duplica le query aggiungendo " ITA" se non c'è già
         if (onlyIta) {
             const strictVersions = queries.map(q => {
                  if (!q.toUpperCase().includes("ITA")) return q + " ITA";
@@ -357,10 +366,8 @@ async function generateStream(type, id, config, userConfStr) {
 
         const internalResultsRaw = (await Promise.all(internalPromises)).flat();
 
-        // Filtriamo i risultati interni
         const validInternalResults = internalResultsRaw.filter(item => {
             if (!item || !item.magnet || !item.title) return false;
-            // Se siamo in Strict Mode, siamo un po' più tolleranti sui film per evitare di avere zero risultati
             if (onlyIta && !isSafeForItalian(item)) return false;
             return true;
         });
@@ -368,13 +375,11 @@ async function generateStream(type, id, config, userConfStr) {
         let allResults = [...validInternalResults];
         console.log(`🔍 Risultati Interni Validi: ${validInternalResults.length}`);
 
-        // --- FASE 2: EXTERNAL (Backup Condizionale) ---
-        // Attiviamo External se abbiamo 4 o meno risultati (alzata la soglia per i film)
+        // --- FASE 2: EXTERNAL ---
         if (validInternalResults.length <= 4) {
             console.log("🚨 Pochi risultati interni. Attivo External Brain (Stealth Mode)...");
             const imdbId = (id.startsWith('tt')) ? id.split(':')[0] : null;
             const mainQuery = queries[0]; 
-
             try {
                 let externalResults = await External.searchMagnet(id, type, imdbId, mainQuery);
                 externalResults = externalResults.map(item => { item.source = "Brain P2P"; return item; });
@@ -405,27 +410,14 @@ async function generateStream(type, id, config, userConfStr) {
         if (filters.no4k) uniqueResults = uniqueResults.filter(i => !/2160p|4k|uhd/i.test(i.title));
         if (filters.noCam) uniqueResults = uniqueResults.filter(i => !/cam|dvdscr|hdcam|telesync|tc|ts/i.test(i.title));
 
-        // SMART SORTING
+        // ═══════════════════════════════════════════════════════════════════
+        // ORDINAMENTO PER DIMENSIONE (Size Sorting)
+        // ═══════════════════════════════════════════════════════════════════
         uniqueResults.sort((a, b) => {
-            const titleA = a.title.toUpperCase();
-            const titleB = b.title.toUpperCase();
-            let scoreA = 0, scoreB = 0;
-
-            if (titleA.includes("AC3") || titleA.includes("DTS") || titleA.includes("DD5.1")) scoreA += 50;
-            if (titleA.includes("ITA") && !titleA.includes("SUB")) scoreA += 30;
-            if (a.source === "Corsaro") scoreA += 25; 
-            if (titleA.includes("2160P") || titleA.includes("4K")) scoreA += 10;
-            if (titleA.includes("SUB ITA") || titleA.includes("VOST")) scoreA -= 10; 
-            scoreA += Math.min(a.seeders || 0, 50);
-
-            if (titleB.includes("AC3") || titleB.includes("DTS") || titleB.includes("DD5.1")) scoreB += 50;
-            if (titleB.includes("ITA") && !titleB.includes("SUB")) scoreB += 30;
-            if (b.source === "Corsaro") scoreB += 25;
-            if (titleB.includes("2160P") || titleB.includes("4K")) scoreB += 10;
-            if (titleB.includes("SUB ITA") || titleB.includes("VOST")) scoreB -= 10;
-            scoreB += Math.min(b.seeders || 0, 50);
-
-            return scoreB - scoreA;
+            const sizeA = parseSize(a.size);
+            const sizeB = parseSize(b.size);
+            // Ordine decrescente (B è più grande di A -> viene prima)
+            return sizeB - sizeA;
         });
 
         // --- LIMITATORE CRITICO ---
@@ -515,4 +507,4 @@ app.get('/:userConf/stream/:type/:id.json', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`Addon v25.2.1 (Brain Full) avviato su porta ${PORT}!`));
+app.listen(PORT, () => console.log(`Addon v25.3.0 (Size Sorting) avviato su porta ${PORT}!`));
