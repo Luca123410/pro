@@ -11,11 +11,11 @@ const Corsaro = require("./corsaro");
 const Knaben = require("./knaben"); 
 const TorrentMagnet = require("./torrentmagnet"); 
 const UIndex = require("./uindex"); 
-const BitSearch = require("./bitsearch");
+// RIMOSSO: BitSearch
 
 // --- COSTANTI & CONFIGURAZIONE ---
 const CINEMETA_URL = 'https://v3-cinemeta.strem.io';
-const REAL_SIZE_FILTER = 150 * 1024 * 1024; // Abbassato a 150MB per non perdere episodi piccoli
+const REAL_SIZE_FILTER = 150 * 1024 * 1024; // 150MB
 const TIMEOUT_TMDB = 4000;
 
 const internalCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
@@ -27,7 +27,7 @@ const scraperLimiter = new Bottleneck({
 });
 
 // [NEW] LIMITATORE REAL-DEBRID (Per evitare Errore 429)
-// Massimo 1 richiesta ogni 350ms verso RD. È più lento ma SICURO al 100%.
+// Massimo 1 richiesta ogni 350ms verso RD.
 const rdLimiter = new Bottleneck({
     maxConcurrent: 1,
     minTime: 350 
@@ -40,9 +40,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 // --- MANIFEST ---
 const manifestBase = {
     id: "org.community.corsaro-brain-ita-strict-v2",
-    version: "24.3.0", // Bump versione fix
+    version: "24.3.1", // Bump versione per il fix dei risultati
     name: "Corsaro + TorrentMagnet (THE BRAIN)",
-    description: "🇮🇹 Motore V24.3: Fix Rate Limit RD + BitSearch Headers. Tolleranza Zero Multi stranieri.",
+    description: "🇮🇹 Motore V24.3.1: Scan aumentato a 40 link. Fix Rate Limit RD. No BitSearch.",
     resources: ["catalog", "stream"],
     types: ["movie", "series"],
     catalogs: [
@@ -85,10 +85,14 @@ function applyCacheHeaders(res, data) {
 function isSafeForItalian(item) {
     if (item.source === "Corsaro") return true;
     const t = item.title.toUpperCase();
-    const hasIta = t.includes("ITA") || t.includes("ITALIAN") || t.includes("IT-EN");
+    
+    // Aggiunto controllo MULTI più permissivo per trovare più risultati
+    const hasIta = t.includes("ITA") || t.includes("ITALIAN") || t.includes("IT-EN") || (t.includes("MULTI") && !t.includes("FRENCH") && !t.includes("SPANISH"));
     if (hasIta) return true;
+    
     const isForeignOnly = t.includes("ENG") || t.includes("VOST") || t.includes("VOSUB");
     if (isForeignOnly) return false;
+    
     return false;
 }
 
@@ -195,7 +199,7 @@ function extractStreamInfo(title) {
     else if (/1080p/.test(t)) quality = "1080p";
     else if (/720p/.test(t)) quality = "720p";
     else if (/480p|sd/.test(t)) quality = "SD";
-    
+     
     let extra = [];
     if (/hdr|10bit/.test(t)) extra.push("HDR");
     if (/dolby|vision/.test(t)) extra.push("DV");
@@ -205,7 +209,7 @@ function extractStreamInfo(title) {
     let lang = [];
     if (t.includes("ita")) lang.push("ITA 🇮🇹");
     if (t.includes("multi") && t.includes("ita")) lang.push("MULTI 🌐");
-    
+     
     return { quality, lang, extraInfo: extra.join(" | ") };
 }
 
@@ -242,7 +246,7 @@ async function generateStream(type, id, config, userConfStr) {
         let promises = [];
         queries.forEach(q => {
             promises.push(scraperLimiter.schedule(() => Corsaro.searchMagnet(q, metadata.year).catch(() => [])));
-            promises.push(scraperLimiter.schedule(() => BitSearch.searchMagnet(q, metadata.year).catch(() => [])));
+            // BitSearch è stato rimosso
             promises.push(scraperLimiter.schedule(() => UIndex.searchMagnet(q, metadata.year).catch(() => [])));
             promises.push(scraperLimiter.schedule(() => TorrentMagnet.searchMagnet(q, metadata.year).catch(() => [])));
         });
@@ -297,7 +301,9 @@ async function generateStream(type, id, config, userConfStr) {
             return scoreB - scoreA;
         });
 
-        const topResults = uniqueResults.slice(0, 15); // Limitiamo a 15 per ridurre carico RD
+        // --- MODIFICA IMPORTANTE: AUMENTATO DA 15 A 40 ---
+        // Questo permette di analizzare molti più risultati da Real-Debrid
+        const topResults = uniqueResults.slice(0, 40); 
 
         let streams = [];
         
@@ -308,14 +314,14 @@ async function generateStream(type, id, config, userConfStr) {
                     const streamData = await RD.getStreamLink(config.rd, item.magnet);
                     if (streamData && streamData.type === 'ready' && streamData.size < REAL_SIZE_FILTER) return null;
                     if (streamData && streamData.filename.toLowerCase().match(/\.rar|\.zip/)) return null;
-                    
+                     
                     const fileTitle = streamData?.filename || item.title;
                     const { quality, lang, extraInfo } = extractStreamInfo(fileTitle);
                     let displayLang = lang.join(" / ") || "ITA 🇮🇹";
                     let nameTag = streamData ? `[RD ⚡] ${item.source}` : `[RD ⏳] ${item.source}`;
                     nameTag += `\n${quality}`;
                     let finalSize = streamData?.size ? formatBytes(streamData.size) : (item.size || "?? GB");
-                    
+                     
                     let titleStr = `📄 ${fileTitle}\n💾 ${finalSize}`;
                     if (extraInfo) titleStr += ` | ${extraInfo}`;
                     titleStr += `\n⚙️ ${item.source}`;
@@ -385,4 +391,4 @@ app.get('/:userConf/stream/:type/:id.json', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`Addon v24.3.0 (Anti-429 Protected) avviato su porta ${PORT}!`));
+app.listen(PORT, () => console.log(`Addon v24.3.1 (Anti-429 + Extended Scan) avviato su porta ${PORT}!`));
