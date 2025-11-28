@@ -17,14 +17,14 @@ const External = require("./external");
 const CINEMETA_URL = 'https://v3-cinemeta.strem.io';
 const REAL_SIZE_FILTER = 150 * 1024 * 1024; // 150MB
 const TIMEOUT_TMDB = 3000;
-const SCRAPER_TIMEOUT = 2800; // 2.8 Secondi MAX per ogni scraper: se è lento, lo saltiamo.
+const SCRAPER_TIMEOUT = 4000; // 4 secondi per cercare bene i Pack
 
 const internalCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 
 // ⚡ LIMITATORE ULTRASONICO
 const scraperLimiter = new Bottleneck({
-    maxConcurrent: 20, // MASSIMO PARALLELISMO
-    minTime: 20        // QUASI ZERO ATTESA
+    maxConcurrent: 20, 
+    minTime: 20       
 });
 
 // LIMITATORE REAL-DEBRID
@@ -40,9 +40,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 // --- MANIFEST ---
 const manifestBase = {
     id: "org.community.corsaro-brain-ita-strict-restore",
-    version: "25.5.0", // Lightspeed Edition
-    name: "Corsaro + TorrentMagnet (LIGHTSPEED)",
-    description: "🇮🇹 Motore V25.5.0: Hard Timeout 2.8s. Query Ottimizzate. Nessun collo di bottiglia.",
+    version: "25.5.5", // Pack Hunter Edition
+    name: "Corsaro + TorrentMagnet (PACK HUNTER)",
+    description: "🇮🇹 Motore V25.5.5: Trova intere stagioni (Pack) sui tracker italiani se il singolo episodio manca.",
     resources: ["catalog", "stream"],
     types: ["movie", "series"],
     catalogs: [
@@ -96,15 +96,32 @@ function applyCacheHeaders(res, data) {
     if (parts.length > 0) res.setHeader('Cache-Control', `${parts.join(', ')}, public`);
 }
 
-// WRAPPER PER TIMEOUT (Il segreto della velocità)
 function withTimeout(promise, ms) {
     const timeout = new Promise((resolve) => setTimeout(() => resolve([]), ms));
     return Promise.race([promise, timeout]);
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// BRAIN QUERY ENGINE v4 (LIGHTSPEED) - Meno query, più mirate
+// LOGICA PACK HUNTER
 // ═══════════════════════════════════════════════════════════════════
+
+function isTitleSafe(queryTitle, fileTitle) {
+    const normalize = (str) => str.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(" ").filter(w => w.length > 1);
+    const queryTokens = normalize(queryTitle);
+    const fileTokens = normalize(fileTitle);
+    if (queryTokens.length === 0) return true;
+    const matchCount = queryTokens.filter(token => fileTokens.includes(token)).length;
+    if (matchCount === 0) return false;
+    return true;
+}
+
+function isFalsePositive(queryTitle, itemTitle) {
+    const q = queryTitle.toUpperCase();
+    const t = itemTitle.toUpperCase();
+    if ((q.includes("DR. HOUSE") || q === "HOUSE") && t.includes("ANUBIS")) return true;
+    return false;
+}
+
 function buildSeriesQueriesForSeries(metadata) {
     const title = metadata.title.trim();
     const original = (metadata.originalTitle || "").trim();
@@ -112,26 +129,34 @@ function buildSeriesQueriesForSeries(metadata) {
     const episode = String(metadata.episode).padStart(2, '0');
     let queries = new Set();
 
-    // Priorità assoluta
+    // 1. Query Episodio Specifico
     queries.add(`${title} S${season}E${episode}`);
     queries.add(`${title} ${season}x${episode}`);
-    
-    // Se titolo originale diverso, usalo (fondamentale per serie straniere)
+
+    // 2. Query PACK STAGIONALE (Fondamentale per Corsaro/Knaben)
+    // Cerca "Stranger Things Stagione 1" anche se cerchi l'episodio 8
+    queries.add(`${title} Stagione ${metadata.season}`);
+    queries.add(`${title} Season ${metadata.season}`);
+    queries.add(`${title} S${season}`); // Generic "S01"
+
     if (original && original !== title) {
         queries.add(`${original} S${season}E${episode}`);
+        queries.add(`${original} Season ${metadata.season}`);
     }
 
-    // Pack stagionale
-    if (metadata.episode === 1) {
-        queries.add(`${title} Stagione ${metadata.season}`);
-    }
-
-    // Alias famosi (ridotti all'essenziale)
+    // Abbreviazioni sicure
     const abbreviations = {
-        "The Walking Dead": "TWD", "Game of Thrones": "GoT", "Breaking Bad": "BB",
-        "Stranger Things": "ST", "The Boys": "Boys", "House of the Dragon": "HotD",
-        "The Last of Us": "TLOU", "Loki": "Loki", "One Piece": "OnePiece", 
-        "Attack on Titan": "AoT", "Demon Slayer": "Kimetsu", "Jujutsu Kaisen": "JJK"
+        "The Walking Dead": "TWD", 
+        "Game of Thrones": "GoT", 
+        "Breaking Bad": "BB",
+        "The Boys": "Boys", 
+        "House of the Dragon": "HotD",
+        "The Last of Us": "TLOU", 
+        "Loki": "Loki", 
+        "One Piece": "OnePiece", 
+        "Attack on Titan": "AoT", 
+        "Demon Slayer": "Kimetsu", 
+        "Jujutsu Kaisen": "JJK"
     };
 
     for (const [full, abb] of Object.entries(abbreviations)) {
@@ -148,28 +173,16 @@ function buildMovieQueries(metadata) {
     const year = metadata.year || "";
     let queries = new Set();
 
-    // 1. Titolo Anno (Standard) - Trova il 90% dei film
     queries.add(`${title} ${year}`);
-
-    // 2. Titolo ITA (Se il titolo base non ha accenti strani o è inglese)
-    // Se cerchiamo "The Conjuring", aggiungere "The Conjuring ITA" aiuta.
     if (!title.toUpperCase().includes("ITA")) {
         queries.add(`${title} ITA`);
     }
-
-    // 3. Titolo Originale (Solo se diverso)
     if (original && original !== title) {
         queries.add(`${original} ${year}`);
     }
-
-    // NOTA: Non cerchiamo più "4k", "Multi", "UHD" esplicitamente.
-    // I risultati 4K/Multi escono comunque con la query "Titolo Anno".
-    // Filtrarli qui rallenta solo il processo.
-
     return Array.from(queries);
 }
 
-// --- LOGICA STRICT ITA ---
 function isSafeForItalian(item) {
     if (item.source === "Corsaro") return true;
     const t = item.title.toUpperCase();
@@ -182,7 +195,40 @@ function isSafeForItalian(item) {
     return false; 
 }
 
-// --- METADATA ---
+// --- CATALOGHI ---
+async function generateCatalog(type, id, config, skip = 0) {
+    const page = Math.floor(skip / 20) + 1;
+    const cacheKey = `catalog:${type}:${id}:${page}`;
+    if (internalCache.has(cacheKey)) return internalCache.get(cacheKey);
+    if (!config.tmdb) return { metas: [] };
+
+    let url = '';
+    switch(id) {
+        case 'tmdb_trending': url = `https://api.themoviedb.org/3/trending/movie/day?api_key=${config.tmdb}&language=it-IT&page=${page}`; break;
+        case 'tmdb_series_trending': url = `https://api.themoviedb.org/3/trending/tv/day?api_key=${config.tmdb}&language=it-IT&page=${page}`; break;
+        case 'tmdb_4k': url = `https://api.themoviedb.org/3/discover/movie?api_key=${config.tmdb}&language=it-IT&sort_by=popularity.desc&primary_release_date.gte=2022-01-01&page=${page}`; break;
+        case 'tmdb_anime': url = `https://api.themoviedb.org/3/discover/movie?api_key=${config.tmdb}&language=it-IT&with_genres=16&with_original_language=ja&sort_by=popularity.desc&page=${page}`; break;
+        default: return { metas: [], cacheMaxAge: 3600 };
+    }
+
+    try {
+        const r = await axios.get(url);
+        const metas = r.data.results.map(m => ({
+            id: `tmdb:${m.id}`,
+            type: type,
+            name: m.title || m.name,
+            poster: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : null,
+            description: m.overview
+        })).filter(m => m.poster);
+
+        const result = { metas, cacheMaxAge: 14400, staleRevalidate: 86400 };
+        internalCache.set(cacheKey, result);
+        return result;
+    } catch (e) { return { metas: [] }; }
+}
+
+// --- STREAM & LOGIC ---
+
 async function getCinemetaMetadata(id, type) {
     try {
         const cleanId = id.split(':')[0]; 
@@ -234,47 +280,27 @@ async function getMetadata(id, type, tmdbKey) {
     return null;
 }
 
-// --- CATALOGHI ---
-async function generateCatalog(type, id, config, skip = 0) {
-    const page = Math.floor(skip / 20) + 1;
-    const cacheKey = `catalog:${type}:${id}:${page}`;
-    if (internalCache.has(cacheKey)) return internalCache.get(cacheKey);
-    if (!config.tmdb) return { metas: [] };
-
-    let url = '';
-    switch(id) {
-        case 'tmdb_trending': url = `https://api.themoviedb.org/3/trending/movie/day?api_key=${config.tmdb}&language=it-IT&page=${page}`; break;
-        case 'tmdb_series_trending': url = `https://api.themoviedb.org/3/trending/tv/day?api_key=${config.tmdb}&language=it-IT&page=${page}`; break;
-        case 'tmdb_4k': url = `https://api.themoviedb.org/3/discover/movie?api_key=${config.tmdb}&language=it-IT&sort_by=popularity.desc&primary_release_date.gte=2022-01-01&page=${page}`; break;
-        case 'tmdb_anime': url = `https://api.themoviedb.org/3/discover/movie?api_key=${config.tmdb}&language=it-IT&with_genres=16&with_original_language=ja&sort_by=popularity.desc&page=${page}`; break;
-        default: return { metas: [], cacheMaxAge: 3600 };
-    }
-
-    try {
-        const r = await axios.get(url);
-        const metas = r.data.results.map(m => ({
-            id: `tmdb:${m.id}`,
-            type: type,
-            name: m.title || m.name,
-            poster: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : null,
-            description: m.overview
-        })).filter(m => m.poster);
-
-        const result = { metas, cacheMaxAge: 14400, staleRevalidate: 86400 };
-        internalCache.set(cacheKey, result);
-        return result;
-    } catch (e) { return { metas: [] }; }
-}
-
-// --- STREAM & LOGIC ---
+// LOGICA FONDAMENTALE PER I PACK
 function isExactEpisodeMatch(torrentTitle, season, episode) {
     if (!torrentTitle) return false;
     const t = torrentTitle.toLowerCase();
     const s = String(season).padStart(2, '0');
     const e = String(episode).padStart(2, '0');
+
+    // 1. Match Esatto (S01E08)
     if (new RegExp(`s${s}e${e}`, 'i').test(t)) return true;
     if (new RegExp(`${season}x${e}`, 'i').test(t)) return true;
-    if (episode === 1 && new RegExp(`(stagione|season|s[0-9]{2}\\s+completa|complete)`, 'i').test(t)) return true;
+
+    // 2. MATCH PACK STAGIONALE (MODIFICA V25.5.5)
+    // Se il file dice "Stagione 1 Completa", va bene SEMPRE, anche se cerco ep 8.
+    // RealDebrid estrarrà il file giusto.
+    if (new RegExp(`(stagione|season|s)${season}\\s*(completa|complete|pack|tutta)`, 'i').test(t)) return true;
+    
+    // 3. Fallback per pack tipo "Stranger Things S01 ITA" (Senza "Complete" ma senza altri episodi specificati)
+    // Se c'è S01 ma NON c'è "E" seguito da un numero diverso (es. S01E02 quando cerco E08), lo accettiamo.
+    if (t.includes(`s${s}`) && !t.match(/e\d{2}/i)) return true;
+    if (t.includes(`stagione ${season}`) && !t.match(/episodio/i)) return true;
+
     return false;
 }
 
@@ -322,17 +348,12 @@ async function generateStream(type, id, config, userConfStr) {
             queries = buildMovieQueries(metadata);
         }
         
-        // Pulizia doppioni finale
         queries = [...new Set(queries)];
-        
-        console.log(`🧠 Brain Engine v4 (Lightspeed) - Query: ${queries.length} varianti`);
+        console.log(`🧠 Brain Engine v4 (Pack Hunter) - Query: ${queries.length}`);
 
-        // --- FASE 1: SCRAPER INTERNI CON HARD TIMEOUT ---
+        // --- FASE 1: SCRAPER INTERNI (ORA CERCANO ANCHE I PACK) ---
         let internalPromises = [];
-        
         queries.forEach(q => {
-            // Avvolgiamo ogni chiamata in "withTimeout"
-            // Se Corsaro/UIndex/Knaben ci mettono più di 2.8 secondi, vengono uccisi.
             internalPromises.push(scraperLimiter.schedule(() => withTimeout(Corsaro.searchMagnet(q, metadata.year), SCRAPER_TIMEOUT).catch(() => [])));
             internalPromises.push(scraperLimiter.schedule(() => withTimeout(UIndex.searchMagnet(q, metadata.year), SCRAPER_TIMEOUT).catch(() => [])));
             internalPromises.push(scraperLimiter.schedule(() => withTimeout(Knaben.searchMagnet(q, metadata.year), SCRAPER_TIMEOUT).catch(() => [])));
@@ -344,25 +365,33 @@ async function generateStream(type, id, config, userConfStr) {
         const validInternalResults = internalResultsRaw.filter(item => {
             if (!item || !item.magnet || !item.title) return false;
             if (onlyIta && !isSafeForItalian(item)) return false;
+
+            // Filtri sicurezza
+            if (isFalsePositive(metadata.title, item.title)) return false;
+            if (metadata.originalTitle && isFalsePositive(metadata.originalTitle, item.title)) return false;
+            if (!isTitleSafe(metadata.title, item.title)) return false;
+
             return true;
         });
 
         let allResults = [...validInternalResults];
-        console.log(`🔍 Risultati Interni Validi: ${validInternalResults.length}`);
+        console.log(`🔍 Risultati Interni (Inclusi Pack): ${validInternalResults.length}`);
 
-        // --- FASE 2: EXTERNAL (Solo se strettamente necessario e con timeout stretto) ---
-        if (validInternalResults.length <= 4) {
-            // Solo 1 query principale per External per fare presto
+        // --- FASE 2: EXTERNAL (SOLO SE NECESSARIO) ---
+        if (validInternalResults.length <= 2) {
             const mainQuery = queries[0]; 
             const imdbId = (id.startsWith('tt')) ? id.split(':')[0] : null;
             try {
                 let externalResults = await withTimeout(External.searchMagnet(id, type, imdbId, mainQuery), SCRAPER_TIMEOUT);
                 externalResults = externalResults.map(item => { item.source = "Brain P2P"; return item; });
+                externalResults = externalResults.filter(item => 
+                    !isFalsePositive(metadata.title, item.title) &&
+                    isTitleSafe(metadata.title, item.title)
+                );
                 allResults = [...allResults, ...externalResults];
             } catch (err) { console.error("External Timeout/Error"); }
         }
 
-        // Se 0 risultati, NON CACHIAMO (o cachiamo per pochissimo) per permettere il reload
         if (allResults.length === 0) return { streams: [{ title: `🚫 Nessun risultato (Riprova)` }], cacheMaxAge: 10 };
 
         // --- DEDUPLICAZIONE ---
@@ -386,14 +415,12 @@ async function generateStream(type, id, config, userConfStr) {
         if (filters.no4k) uniqueResults = uniqueResults.filter(i => !/2160p|4k|uhd/i.test(i.title));
         if (filters.noCam) uniqueResults = uniqueResults.filter(i => !/cam|dvdscr|hdcam|telesync|tc|ts/i.test(i.title));
 
-        // ORDINAMENTO SIZE
         uniqueResults.sort((a, b) => {
             const sizeA = parseSize(a.size);
             const sizeB = parseSize(b.size);
             return sizeB - sizeA;
         });
 
-        // Limitiamo a 70 risultati (ancora più alto)
         const topResults = uniqueResults.slice(0, 70); 
 
         let streams = [];
@@ -412,7 +439,13 @@ async function generateStream(type, id, config, userConfStr) {
                     nameTag += `\n${quality}`;
                     let finalSize = streamData?.size ? formatBytes(streamData.size) : (item.size || "?? GB");
                      
-                    let titleStr = `📄 ${fileTitle}\n💾 ${finalSize}`;
+                    // SE È UN PACK, LO SCRIVIAMO
+                    if (finalSize.includes("GB") && parseFloat(finalSize) > 5) {
+                         titleStr = `📦 STAGIONE PACK\n📄 ${fileTitle}\n💾 ${finalSize}`;
+                    } else {
+                         titleStr = `📄 ${fileTitle}\n💾 ${finalSize}`;
+                    }
+                    
                     if (extraInfo) titleStr += ` | ${extraInfo}`;
                     if (fileTitle.toUpperCase().includes("AC3") || fileTitle.toUpperCase().includes("DTS")) titleStr += " | 🔊 AUDIO PRO";
                     titleStr += `\n🔊 ${displayLang}`;
@@ -431,7 +464,7 @@ async function generateStream(type, id, config, userConfStr) {
 
         const finalResponse = { 
             streams: streams.length > 0 ? streams : [{ title: "🚫 Nessun file valido su RD." }],
-            cacheMaxAge: streams.length > 0 ? 1800 : 30, // Se 0 risultati, cache breve
+            cacheMaxAge: streams.length > 0 ? 1800 : 30,
             staleRevalidate: streams.length > 0 ? 3600 : 0
         };
         internalCache.set(cacheKey, finalResponse);
@@ -480,4 +513,4 @@ app.get('/:userConf/stream/:type/:id.json', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`Addon v25.5.0 (LIGHTSPEED) avviato su porta ${PORT}!`));
+app.listen(PORT, () => console.log(`Addon v25.5.5 (PACK HUNTER) avviato su porta ${PORT}!`));
