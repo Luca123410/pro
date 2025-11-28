@@ -12,11 +12,13 @@ const headers = {
 
 async function searchMagnet(title, year) {
     try {
-        const cleanTitle = title.replace(/[^a-zA-Z0-9 ]/g, " ").trim();
+        // Pulizia titolo meno aggressiva per mantenere numeri e spazi corretti
+        const cleanTitle = title.replace(/[^a-zA-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+        
         // Cerchiamo solo il titolo per massimizzare i risultati
         const searchUrl = `${CORSARO_URL}/search?q=${encodeURIComponent(cleanTitle)}`;
         
-        console.log(`\n--- [CORSARO REGEX SEARCH] ---`);
+        console.log(`\n--- [CORSARO FIX SEARCH] ---`);
         console.log(`🔎 Scrape: ${searchUrl}`);
 
         const { data } = await axios.get(searchUrl, { headers, httpsAgent, timeout: 10000 });
@@ -30,9 +32,8 @@ async function searchMagnet(title, year) {
         let potentialItems = [];
 
         // --- METODO SCANSIONE LINK ---
-        // Cerchiamo link che contengono "/torrent/" o "details.php"
         $('a').each((i, elem) => {
-            if (potentialItems.length >= 12) return; // Max 12 risultati
+            if (potentialItems.length >= 30) return; // AUMENTATO IL LIMITE (era 12) PER TROVARE I PACK STAGIONALI
 
             const href = $(elem).attr('href');
             const text = $(elem).text().trim();
@@ -41,8 +42,10 @@ async function searchMagnet(title, year) {
 
             // Verifica se è un link di dettaglio
             if (href.includes('/torrent/') || href.includes('details.php')) {
-                // Filtro Anno Base
-                if (year && !text.includes(year)) return;
+                
+                // *** FIX CRITICO: La linea del filtro anno è stata rimossa. ***
+                // Questo permette alle serie TV (i cui titoli non contengono l'anno di uscita)
+                // di essere processate e filtrate correttamente solo dal main addon (addon (20).js).
 
                 let fullUrl = href.startsWith('http') ? href : `${CORSARO_URL}${href.startsWith('/') ? '' : '/'}${href}`;
                 
@@ -53,7 +56,7 @@ async function searchMagnet(title, year) {
             }
         });
 
-        console.log(`   ⚡ Trovati ${potentialItems.length} candidati. Scansione dettagli...`);
+        console.log(`   ⚡ Trovati ${potentialItems.length} candidati su Corsaro. Scansione dettagli...`);
 
         if (potentialItems.length === 0) {
             // Fallback: Magnet diretto in home (vecchio stile)
@@ -77,8 +80,7 @@ async function searchMagnet(title, year) {
                 const detailText = detailPage.data;
                 
                 // --- ESTRAZIONE MAGNET VIA REGEX ---
-                // Più robusto di cheerio per i magnet nascosti nei commenti o script
-                const magnetMatch = detailText.match(/magnet:\?xt=urn:btih:([a-zA-Z0-9]{40})/);
+                const magnetMatch = detailText.match(/magnet:\?xt=urn:btih:([a-zA-Z0-9]{40})/i); // Regex case-insensitive
                 
                 if (!magnetMatch) return null;
 
@@ -95,6 +97,7 @@ async function searchMagnet(title, year) {
                     const num = parseFloat(sizeMatch[1]);
                     if (sizeStr.includes("GB")) sizeBytes = num * 1024**3;
                     else if (sizeStr.includes("MB")) sizeBytes = num * 1024**2;
+                    else if (sizeStr.includes("KB")) sizeBytes = num * 1024;
                 }
 
                 return {
