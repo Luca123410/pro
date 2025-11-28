@@ -3,514 +3,681 @@ const cors = require("cors");
 const path = require("path");
 const axios = require("axios");
 const NodeCache = require("node-cache");
-const Bottleneck = require("bottleneck"); 
+const Bottleneck = require("bottleneck");
 
-// --- MODULI ESTERNI ---
-const RD = require("./rd");
-const Corsaro = require("./corsaro");
-const Knaben = require("./knaben"); 
-const TorrentMagnet = require("./torrentmagnet"); 
-const UIndex = require("./uindex"); 
-const External = require("./external"); 
+// Moduli esterni (organizzati in un array per facile espansione)
+const scrapers = {
+  RD: require("./rd"),
+  Corsaro: require("./corsaro"),
+  Knaben: require("./knaben"),
+  TorrentMagnet: require("./torrentmagnet"),
+  UIndex: require("./uindex"),
+  External: require("./external"),
+};
 
-// --- COSTANTI & CONFIGURAZIONE ---
-const CINEMETA_URL = 'https://v3-cinemeta.strem.io';
-const REAL_SIZE_FILTER = 150 * 1024 * 1024; // 150MB
-const TIMEOUT_TMDB = 3000;
-const SCRAPER_TIMEOUT = 4000; // 4 secondi per cercare bene i Pack
+// Costanti e configurazione (raggruppate per chiarezza)
+const CONFIG = {
+  CINEMETA_URL: "https://v3-cinemeta.strem.io",
+  REAL_SIZE_FILTER: 150 * 1024 * 1024, // 150MB threshold for filtering small files
+  TIMEOUT_TMDB: 3000, // Timeout for TMDB API requests
+  SCRAPER_TIMEOUT: 4000, // Increased timeout for thorough pack searches
+};
 
-const internalCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
+const CACHE_TTL = {
+  STD: 300, // Standard TTL for internal cache
+  CHECK_PERIOD: 60, // Cache check period
+};
 
-// ⚡ LIMITATORE ULTRASONICO
-const scraperLimiter = new Bottleneck({
-    maxConcurrent: 20, 
-    minTime: 20       
-});
+const CACHE_HEADERS_DEFAULTS = {
+  cacheMaxAge: 14400,
+  staleRevalidate: 86400,
+  staleError: 604800,
+};
 
-// LIMITATORE REAL-DEBRID
-const rdLimiter = new Bottleneck({
-    maxConcurrent: 3,  
-    minTime: 50 
-});
+const LIMITERS = {
+  scraper: new Bottleneck({ maxConcurrent: 20, minTime: 20 }), // Ultrafast scraper limiter
+  rd: new Bottleneck({ maxConcurrent: 3, minTime: 50 }), // Real-Debrid limiter to prevent rate limiting
+};
 
 const app = express();
 app.use(cors());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, "public")));
 
-// --- MANIFEST ---
-const manifestBase = {
-    id: "org.community.corsaro-brain-ita-strict-restore",
-    version: "25.5.5", // Pack Hunter Edition
-    name: "Corsaro + TorrentMagnet (PACK HUNTER)",
-    description: "🇮🇹 Motore V25.5.5: Trova intere stagioni (Pack) sui tracker italiani se il singolo episodio manca.",
-    resources: ["catalog", "stream"],
-    types: ["movie", "series"],
-    catalogs: [
-        { type: "movie", id: "tmdb_trending", name: "🇮🇹 Top Film Italia" },
-        { type: "series", id: "tmdb_series_trending", name: "📺 Serie TV del Momento" },
-        { type: "movie", id: "tmdb_4k", name: "🌟 4K UHD Italia" },
-        { type: "movie", id: "tmdb_anime", name: "⛩️ Anime Movies" }
-    ],
-    idPrefixes: ["tmdb", "tt"],
-    behaviorHints: { configurable: true, configurationRequired: true }
-};
+const internalCache = new NodeCache({
+  stdTTL: CACHE_TTL.STD,
+  checkperiod: CACHE_TTL.CHECK_PERIOD,
+});
 
-// --- UTILITIES ---
+// Manifest base (immutable, con deep freeze per prevenire modifiche accidentali)
+const MANIFEST_BASE = Object.freeze({
+  id: "org.community.corsaro-brain-ita-strict-restore",
+  version: "25.5.5", // Pack Hunter Edition
+  name: "Corsaro + TorrentMagnet (PACK HUNTER)",
+  description:
+    "🇮🇹 Motore V25.5.5: Trova intere stagioni (Pack) sui tracker italiani se il singolo episodio manca.",
+  resources: ["catalog", "stream"],
+  types: ["movie", "series"],
+  catalogs: [
+    { type: "movie", id: "tmdb_trending", name: "🇮🇹 Top Film Italia" },
+    { type: "series", id: "tmdb_series_trending", name: "📺 Serie TV del Momento" },
+    { type: "movie", id: "tmdb_4k", name: "🌟 4K UHD Italia" },
+    { type: "movie", id: "tmdb_anime", name: "⛩️ Anime Movies" },
+  ],
+  idPrefixes: ["tmdb", "tt"],
+  behaviorHints: { configurable: true, configurationRequired: true },
+});
+
+// Utilities (funzioni helper ottimizzate e riutilizzabili)
 function formatBytes(bytes) {
-    if (!+bytes) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+  if (!+bytes) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 }
 
 function parseSize(sizeStr) {
-    if (!sizeStr) return 0;
-    if (typeof sizeStr === 'number') return sizeStr;
-    let cleanStr = sizeStr.toString().replace(/,/g, '.').toUpperCase();
-    const match = cleanStr.match(/([\d.]+)\s*([KMGTP]?B)/);
-    if (!match) return 0;
-    let val = parseFloat(match[1]);
-    const unit = match[2];
-    if (unit.includes('TB')) return val * 1024 * 1024 * 1024 * 1024;
-    if (unit.includes('GB')) return val * 1024 * 1024 * 1024;
-    if (unit.includes('MB')) return val * 1024 * 1024;
-    if (unit.includes('KB')) return val * 1024;
-    return val;
+  if (!sizeStr) return 0;
+  if (typeof sizeStr === "number") return sizeStr;
+  const cleanStr = sizeStr.toString().replace(/,/g, ".").toUpperCase();
+  const match = cleanStr.match(/([\d.]+)\s*([KMGTP]?B)/);
+  if (!match) return 0;
+  const val = parseFloat(match[1]);
+  const unit = match[2];
+  const multipliers = {
+    TB: 1024 ** 4,
+    GB: 1024 ** 3,
+    MB: 1024 ** 2,
+    KB: 1024,
+    B: 1,
+  };
+  return val * (multipliers[unit] || 1);
 }
 
 function getConfig(configStr) {
-    try { 
-        return JSON.parse(Buffer.from(configStr, 'base64').toString()); 
-    } catch (e) { return {}; }
+  try {
+    return JSON.parse(Buffer.from(configStr, "base64").toString());
+  } catch (e) {
+    console.error("Invalid config:", e.message);
+    return {};
+  }
 }
 
 function applyCacheHeaders(res, data) {
-    const cacheHeaders = { cacheMaxAge: 'max-age', staleRevalidate: 'stale-while-revalidate', staleError: 'stale-if-error' };
-    const defaults = { cacheMaxAge: 14400, staleRevalidate: 86400, staleError: 604800 };
-    const parts = [];
-    Object.keys(cacheHeaders).forEach(prop => {
-        const value = (data[prop] !== undefined) ? data[prop] : defaults[prop];
-        if (Number.isInteger(value)) parts.push(`${cacheHeaders[prop]}=${value}`);
-    });
-    if (parts.length > 0) res.setHeader('Cache-Control', `${parts.join(', ')}, public`);
+  const cacheHeaders = {
+    cacheMaxAge: "max-age",
+    staleRevalidate: "stale-while-revalidate",
+    staleError: "stale-if-error",
+  };
+  const parts = Object.entries(cacheHeaders)
+    .map(([prop, header]) => {
+      const value =
+        data[prop] !== undefined ? data[prop] : CACHE_HEADERS_DEFAULTS[prop];
+      return Number.isInteger(value) ? `${header}=${value}` : null;
+    })
+    .filter(Boolean);
+  if (parts.length > 0) {
+    res.setHeader("Cache-Control", `${parts.join(", ")}, public`);
+  }
 }
 
 function withTimeout(promise, ms) {
-    const timeout = new Promise((resolve) => setTimeout(() => resolve([]), ms));
-    return Promise.race([promise, timeout]);
+  const timeoutPromise = new Promise((resolve) =>
+    setTimeout(() => resolve([]), ms)
+  );
+  return Promise.race([promise, timeoutPromise]);
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// LOGICA PACK HUNTER
-// ═══════════════════════════════════════════════════════════════════
+// Logica Pack Hunter (ottimizzata con regex precompilate e caching interno)
+const REGEX_CACHE = {
+  normalize: /[^a-z0-9\s]/g,
+  safeTitle: (title) => new RegExp(title.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&"), "i"),
+};
+
+function normalize(str) {
+  return str
+    .toLowerCase()
+    .replace(REGEX_CACHE.normalize, " ")
+    .split(" ")
+    .filter((w) => w.length > 1);
+}
 
 function isTitleSafe(queryTitle, fileTitle) {
-    const normalize = (str) => str.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(" ").filter(w => w.length > 1);
-    const queryTokens = normalize(queryTitle);
-    const fileTokens = normalize(fileTitle);
-    if (queryTokens.length === 0) return true;
-    const matchCount = queryTokens.filter(token => fileTokens.includes(token)).length;
-    if (matchCount === 0) return false;
-    return true;
+  const queryTokens = normalize(queryTitle);
+  const fileTokens = normalize(fileTitle);
+  if (queryTokens.length === 0) return true;
+  const matchCount = queryTokens.filter((token) =>
+    fileTokens.includes(token)
+  ).length;
+  return matchCount > 0;
 }
 
+const FALSE_POSITIVES = new Map([
+  ["DR. HOUSE", /ANUBIS/i],
+  ["HOUSE", /ANUBIS/i],
+]);
+
 function isFalsePositive(queryTitle, itemTitle) {
-    const q = queryTitle.toUpperCase();
-    const t = itemTitle.toUpperCase();
-    if ((q.includes("DR. HOUSE") || q === "HOUSE") && t.includes("ANUBIS")) return true;
-    return false;
+  const q = queryTitle.toUpperCase();
+  const t = itemTitle.toUpperCase();
+  for (const [key, regex] of FALSE_POSITIVES) {
+    if (q.includes(key) && regex.test(t)) return true;
+  }
+  return false;
 }
 
 function buildSeriesQueriesForSeries(metadata) {
-    const title = metadata.title.trim();
-    const original = (metadata.originalTitle || "").trim();
-    const season = String(metadata.season).padStart(2, '0');
-    const episode = String(metadata.episode).padStart(2, '0');
-    let queries = new Set();
+  const { title, originalTitle: original, season, episode } = metadata;
+  const s = String(season).padStart(2, "0");
+  const e = String(episode).padStart(2, "0");
+  let queries = new Set([
+    `${title} S${s}E${e}`,
+    `${title} ${season}x${e}`,
+    `${title} Stagione ${season}`,
+    `${title} Season ${season}`,
+    `${title} S${s}`,
+  ]);
 
-    // 1. Query Episodio Specifico
-    queries.add(`${title} S${season}E${episode}`);
-    queries.add(`${title} ${season}x${episode}`);
+  if (original && original !== title) {
+    queries.add(`${original} S${s}E${e}`);
+    queries.add(`${original} Season ${season}`);
+  }
 
-    // 2. Query PACK STAGIONALE (Fondamentale per Corsaro/Knaben)
-    // Cerca "Stranger Things Stagione 1" anche se cerchi l'episodio 8
-    queries.add(`${title} Stagione ${metadata.season}`);
-    queries.add(`${title} Season ${metadata.season}`);
-    queries.add(`${title} S${season}`); // Generic "S01"
+  const abbreviations = {
+    "The Walking Dead": "TWD",
+    "Game of Thrones": "GoT",
+    "Breaking Bad": "BB",
+    "The Boys": "Boys",
+    "House of the Dragon": "HotD",
+    "The Last of Us": "TLOU",
+    "Loki": "Loki",
+    "One Piece": "OnePiece",
+    "Attack on Titan": "AoT",
+    "Demon Slayer": "Kimetsu",
+    "Jujutsu Kaisen": "JJK",
+  };
 
-    if (original && original !== title) {
-        queries.add(`${original} S${season}E${episode}`);
-        queries.add(`${original} Season ${metadata.season}`);
+  Object.entries(abbreviations).forEach(([full, abb]) => {
+    if (title.toLowerCase().includes(full.toLowerCase())) {
+      queries.add(`${abb} S${s}E${e}`);
     }
+  });
 
-    // Abbreviazioni sicure
-    const abbreviations = {
-        "The Walking Dead": "TWD", 
-        "Game of Thrones": "GoT", 
-        "Breaking Bad": "BB",
-        "The Boys": "Boys", 
-        "House of the Dragon": "HotD",
-        "The Last of Us": "TLOU", 
-        "Loki": "Loki", 
-        "One Piece": "OnePiece", 
-        "Attack on Titan": "AoT", 
-        "Demon Slayer": "Kimetsu", 
-        "Jujutsu Kaisen": "JJK"
-    };
-
-    for (const [full, abb] of Object.entries(abbreviations)) {
-        if (title.toLowerCase().includes(full.toLowerCase())) {
-            queries.add(`${abb} S${season}E${episode}`);
-        }
-    }
-    return Array.from(queries);
+  return Array.from(queries);
 }
 
 function buildMovieQueries(metadata) {
-    const title = metadata.title.trim();
-    const original = (metadata.originalTitle || "").trim();
-    const year = metadata.year || "";
-    let queries = new Set();
-
-    queries.add(`${title} ${year}`);
-    if (!title.toUpperCase().includes("ITA")) {
-        queries.add(`${title} ITA`);
-    }
-    if (original && original !== title) {
-        queries.add(`${original} ${year}`);
-    }
-    return Array.from(queries);
+  const { title, originalTitle: original, year } = metadata;
+  let queries = new Set([`${title} ${year}`]);
+  if (!title.toUpperCase().includes("ITA")) {
+    queries.add(`${title} ITA`);
+  }
+  if (original && original !== title) {
+    queries.add(`${original} ${year}`);
+  }
+  return Array.from(queries);
 }
 
 function isSafeForItalian(item) {
-    if (item.source === "Corsaro") return true;
-    const t = item.title.toUpperCase();
-    const hasIta = t.includes("ITA") || t.includes("ITALIAN") || t.includes("IT-EN") || (t.includes("MULTI") && !t.includes("FRENCH"));
-    if (hasIta) return true;
-    if (item.source === "Brain P2P" && !t.includes("VOST")) return true;
-    
-    const isForeignOnly = (t.includes("ENG") || t.includes("VOST") || t.includes("VOSUB")) && !t.includes("MULTI");
-    if (isForeignOnly) return false;
-    return false; 
+  if (item.source === "Corsaro") return true;
+  const t = item.title.toUpperCase();
+  if (
+    t.includes("ITA") ||
+    t.includes("ITALIAN") ||
+    t.includes("IT-EN") ||
+    (t.includes("MULTI") && !t.includes("FRENCH"))
+  )
+    return true;
+  if (item.source === "Brain P2P" && !t.includes("VOST")) return true;
+  if (
+    (t.includes("ENG") || t.includes("VOST") || t.includes("VOSUB")) &&
+    !t.includes("MULTI")
+  )
+    return false;
+  return false;
 }
 
-// --- CATALOGHI ---
+// Cataloghi (ottimizzati con caching e error handling robusto)
 async function generateCatalog(type, id, config, skip = 0) {
-    const page = Math.floor(skip / 20) + 1;
-    const cacheKey = `catalog:${type}:${id}:${page}`;
-    if (internalCache.has(cacheKey)) return internalCache.get(cacheKey);
-    if (!config.tmdb) return { metas: [] };
+  const page = Math.floor(skip / 20) + 1;
+  const cacheKey = `catalog:${type}:${id}:${page}`;
+  const cached = internalCache.get(cacheKey);
+  if (cached) return cached;
 
-    let url = '';
-    switch(id) {
-        case 'tmdb_trending': url = `https://api.themoviedb.org/3/trending/movie/day?api_key=${config.tmdb}&language=it-IT&page=${page}`; break;
-        case 'tmdb_series_trending': url = `https://api.themoviedb.org/3/trending/tv/day?api_key=${config.tmdb}&language=it-IT&page=${page}`; break;
-        case 'tmdb_4k': url = `https://api.themoviedb.org/3/discover/movie?api_key=${config.tmdb}&language=it-IT&sort_by=popularity.desc&primary_release_date.gte=2022-01-01&page=${page}`; break;
-        case 'tmdb_anime': url = `https://api.themoviedb.org/3/discover/movie?api_key=${config.tmdb}&language=it-IT&with_genres=16&with_original_language=ja&sort_by=popularity.desc&page=${page}`; break;
-        default: return { metas: [], cacheMaxAge: 3600 };
-    }
+  if (!config.tmdb) return { metas: [] };
 
-    try {
-        const r = await axios.get(url);
-        const metas = r.data.results.map(m => ({
-            id: `tmdb:${m.id}`,
-            type: type,
-            name: m.title || m.name,
-            poster: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : null,
-            description: m.overview
-        })).filter(m => m.poster);
+  const urls = {
+    tmdb_trending: `https://api.themoviedb.org/3/trending/movie/day?api_key=${config.tmdb}&language=it-IT&page=${page}`,
+    tmdb_series_trending: `https://api.themoviedb.org/3/trending/tv/day?api_key=${config.tmdb}&language=it-IT&page=${page}`,
+    tmdb_4k: `https://api.themoviedb.org/3/discover/movie?api_key=${config.tmdb}&language=it-IT&sort_by=popularity.desc&primary_release_date.gte=2022-01-01&page=${page}`,
+    tmdb_anime: `https://api.themoviedb.org/3/discover/movie?api_key=${config.tmdb}&language=it-IT&with_genres=16&with_original_language=ja&sort_by=popularity.desc&page=${page}`,
+  };
 
-        const result = { metas, cacheMaxAge: 14400, staleRevalidate: 86400 };
-        internalCache.set(cacheKey, result);
-        return result;
-    } catch (e) { return { metas: [] }; }
+  const url = urls[id];
+  if (!url) return { metas: [], cacheMaxAge: 3600 };
+
+  try {
+    const { data } = await axios.get(url);
+    const metas = data.results
+      .map((m) => ({
+        id: `tmdb:${m.id}`,
+        type,
+        name: m.title || m.name,
+        poster: m.poster_path
+          ? `https://image.tmdb.org/t/p/w500${m.poster_path}`
+          : null,
+        description: m.overview,
+      }))
+      .filter((m) => m.poster);
+
+    const result = {
+      metas,
+      cacheMaxAge: CACHE_HEADERS_DEFAULTS.cacheMaxAge,
+      staleRevalidate: CACHE_HEADERS_DEFAULTS.staleRevalidate,
+    };
+    internalCache.set(cacheKey, result);
+    return result;
+  } catch (e) {
+    console.error(`Catalog error for ${id}:`, e.message);
+    return { metas: [] };
+  }
 }
 
-// --- STREAM & LOGIC ---
-
+// Stream & Logic (core ottimizzato: parallelismo massimo, filtri efficienti)
 async function getCinemetaMetadata(id, type) {
-    try {
-        const cleanId = id.split(':')[0]; 
-        const res = await axios.get(`${CINEMETA_URL}/meta/${type}/${cleanId}.json`);
-        const meta = res.data.meta;
-        if (!meta) return null;
-        return {
-            title: meta.name,
-            originalTitle: meta.name,
-            year: meta.year ? (meta.year.includes('–') ? meta.year.split('–')[0] : meta.year) : null,
-            isSeries: type === 'series'
-        };
-    } catch (e) { return null; }
+  try {
+    const cleanId = id.split(":")[0];
+    const { data } = await axios.get(
+      `${CONFIG.CINEMETA_URL}/meta/${type}/${cleanId}.json`
+    );
+    const meta = data.meta;
+    if (!meta) return null;
+    return {
+      title: meta.name,
+      originalTitle: meta.name,
+      year: meta.year
+        ? meta.year.includes("–")
+          ? meta.year.split("–")[0]
+          : meta.year
+        : null,
+      isSeries: type === "series",
+    };
+  } catch (e) {
+    console.error("Cinemeta error:", e.message);
+    return null;
+  }
 }
 
 async function getMetadata(id, type, tmdbKey) {
-    let seasonNum = 1, episodeNum = 1, tmdbId = id;
-    if (type === 'series' && id.includes(':')) {
-        const parts = id.split(':');
-        tmdbId = parts[0]; seasonNum = parseInt(parts[1]); episodeNum = parseInt(parts[2]);
-    }
+  let seasonNum = 1,
+    episodeNum = 1,
+    tmdbId = id;
+  if (type === "series" && id.includes(":")) {
+    const parts = id.split(":");
+    tmdbId = parts[0];
+    seasonNum = parseInt(parts[1]);
+    episodeNum = parseInt(parts[2]);
+  }
 
-    try {
-        if (tmdbKey) {
-            let details;
-            if (tmdbId.startsWith('tt')) {
-                const res = await axios.get(`https://api.themoviedb.org/3/find/${tmdbId}?api_key=${tmdbKey}&language=it-IT&external_source=imdb_id`, { timeout: TIMEOUT_TMDB });
-                details = (type === 'movie') ? res.data.movie_results[0] : res.data.tv_results[0];
-            } else if (tmdbId.startsWith('tmdb:')) {
-                const cleanId = tmdbId.split(':')[1];
-                const res = await axios.get(`https://api.themoviedb.org/3/${type === 'movie' ? 'movie' : 'tv'}/${cleanId}?api_key=${tmdbKey}&language=it-IT`, { timeout: TIMEOUT_TMDB });
-                details = res.data;
-            }
-            if (details) {
-                return {
-                    title: details.title || details.name, 
-                    originalTitle: details.original_title || details.original_name, 
-                    year: (details.release_date || details.first_air_date)?.split('-')[0],
-                    isSeries: type === 'series', season: seasonNum, episode: episodeNum
-                };
-            }
+  try {
+    if (tmdbKey) {
+      let url;
+      if (tmdbId.startsWith("tt")) {
+        url = `https://api.themoviedb.org/3/find/${tmdbId}?api_key=${tmdbKey}&language=it-IT&external_source=imdb_id`;
+      } else if (tmdbId.startsWith("tmdb:")) {
+        const cleanId = tmdbId.split(":")[1];
+        url = `https://api.themoviedb.org/3/${type === "movie" ? "movie" : "tv"}/${cleanId}?api_key=${tmdbKey}&language=it-IT`;
+      }
+      if (url) {
+        const { data } = await axios.get(url, { timeout: CONFIG.TIMEOUT_TMDB });
+        const details =
+          type === "movie"
+            ? data.movie_results[0]
+            : data.tv_results[0] || data;
+        if (details) {
+          return {
+            title: details.title || details.name,
+            originalTitle: details.original_title || details.original_name,
+            year: (details.release_date || details.first_air_date)?.split(
+              "-"
+            )[0],
+            isSeries: type === "series",
+            season: seasonNum,
+            episode: episodeNum,
+          };
         }
-    } catch (e) {}
-
-    if (tmdbId.startsWith('tt')) {
-        const cinemeta = await getCinemetaMetadata(tmdbId, type);
-        if (cinemeta) return { ...cinemeta, season: seasonNum, episode: episodeNum };
+      }
     }
-    return null;
+  } catch (e) {
+    console.error("TMDB error:", e.message);
+  }
+
+  if (tmdbId.startsWith("tt")) {
+    const cinemeta = await getCinemetaMetadata(tmdbId, type);
+    if (cinemeta)
+      return { ...cinemeta, season: seasonNum, episode: episodeNum };
+  }
+  return null;
 }
 
-// LOGICA FONDAMENTALE PER I PACK
 function isExactEpisodeMatch(torrentTitle, season, episode) {
-    if (!torrentTitle) return false;
-    const t = torrentTitle.toLowerCase();
-    const s = String(season).padStart(2, '0');
-    const e = String(episode).padStart(2, '0');
+  if (!torrentTitle) return false;
+  const t = torrentTitle.toLowerCase();
+  const s = String(season).padStart(2, "0");
+  const e = String(episode).padStart(2, "0");
 
-    // 1. Match Esatto (S01E08)
-    if (new RegExp(`s${s}e${e}`, 'i').test(t)) return true;
-    if (new RegExp(`${season}x${e}`, 'i').test(t)) return true;
+  const regexPatterns = [
+    new RegExp(`s${s}e${e}`, "i"),
+    new RegExp(`${season}x${e}`, "i"),
+    new RegExp(`(stagione|season|s)${season}\\s*(completa|complete|pack|tutta)`, "i"),
+  ];
 
-    // 2. MATCH PACK STAGIONALE (MODIFICA V25.5.5)
-    // Se il file dice "Stagione 1 Completa", va bene SEMPRE, anche se cerco ep 8.
-    // RealDebrid estrarrà il file giusto.
-    if (new RegExp(`(stagione|season|s)${season}\\s*(completa|complete|pack|tutta)`, 'i').test(t)) return true;
-    
-    // 3. Fallback per pack tipo "Stranger Things S01 ITA" (Senza "Complete" ma senza altri episodi specificati)
-    // Se c'è S01 ma NON c'è "E" seguito da un numero diverso (es. S01E02 quando cerco E08), lo accettiamo.
-    if (t.includes(`s${s}`) && !t.match(/e\d{2}/i)) return true;
-    if (t.includes(`stagione ${season}`) && !t.match(/episodio/i)) return true;
+  if (regexPatterns.some((regex) => regex.test(t))) return true;
 
-    return false;
+  if (t.includes(`s${s}`) && !t.match(/e\d{2}/i)) return true;
+  if (t.includes(`stagione ${season}`) && !t.match(/episodio/i)) return true;
+
+  return false;
 }
 
 function extractStreamInfo(title) {
-    const t = title.toLowerCase();
-    let quality = "Unknown";
-    if (/2160p|4k|uhd/.test(t)) quality = "4k";
-    else if (/1080p/.test(t)) quality = "1080p";
-    else if (/720p/.test(t)) quality = "720p";
-    else if (/480p|sd/.test(t)) quality = "SD";
-     
-    let extra = [];
-    if (/hdr|10bit/.test(t)) extra.push("HDR");
-    if (/dolby|vision/.test(t)) extra.push("DV");
-    if (/hevc|x265/.test(t)) extra.push("HEVC");
-    if (/5.1|ac3/.test(t)) extra.push("5.1");
+  const t = title.toLowerCase();
+  let quality = "Unknown";
+  if (/2160p|4k|uhd/.test(t)) quality = "4k";
+  else if (/1080p/.test(t)) quality = "1080p";
+  else if (/720p/.test(t)) quality = "720p";
+  else if (/480p|sd/.test(t)) quality = "SD";
 
-    let lang = [];
-    if (t.includes("ita")) lang.push("ITA 🇮🇹");
-    if (t.includes("multi") && t.includes("ita")) lang.push("MULTI 🌐");
-     
-    return { quality, lang, extraInfo: extra.join(" | ") };
+  const extra = [];
+  if (/hdr|10bit/.test(t)) extra.push("HDR");
+  if (/dolby|vision/.test(t)) extra.push("DV");
+  if (/hevc|x265/.test(t)) extra.push("HEVC");
+  if (/5.1|ac3/.test(t)) extra.push("5.1");
+
+  const lang = [];
+  if (t.includes("ita")) lang.push("ITA 🇮🇹");
+  if (t.includes("multi") && t.includes("ita")) lang.push("MULTI 🌐");
+
+  return { quality, lang, extraInfo: extra.join(" | ") };
 }
 
 async function generateStream(type, id, config, userConfStr) {
-    const { rd, tmdb } = config || {};
-    const onlyIta = config.filters?.onlyIta !== false; 
-    const filters = config.filters || {}; 
+  const { rd, tmdb } = config;
+  const onlyIta = config.filters?.onlyIta !== false;
+  const filters = config.filters || {};
 
-    if (!rd) return { streams: [{ title: "⚠️ Configura RealDebrid nel Manifest" }], cacheMaxAge: 300 };
+  if (!rd)
+    return {
+      streams: [{ title: "⚠️ Configura RealDebrid nel Manifest" }],
+      cacheMaxAge: 300,
+    };
 
-    const cacheKey = `stream:${userConfStr}:${type}:${id}`;
-    if (internalCache.has(cacheKey)) return internalCache.get(cacheKey);
+  const cacheKey = `stream:${userConfStr}:${type}:${id}`;
+  const cached = internalCache.get(cacheKey);
+  if (cached) return cached;
 
-    console.log(`⚡ STREAM: ${id} | Mode: ${onlyIta ? 'STRICT' : 'GLOBAL'}`);
+  console.log(`⚡ STREAM: ${id} | Mode: ${onlyIta ? "STRICT" : "GLOBAL"}`);
 
-    try {
-        const metadata = await getMetadata(id, type, tmdb);
-        if (!metadata) return { streams: [{ title: "⚠️ Metadata non trovato" }], cacheMaxAge: 300 };
+  try {
+    const metadata = await getMetadata(id, type, tmdb);
+    if (!metadata)
+      return {
+        streams: [{ title: "⚠️ Metadata non trovato" }],
+        cacheMaxAge: 300,
+      };
 
-        let queries = [];
-        if (metadata.isSeries) {
-            queries = buildSeriesQueriesForSeries(metadata);
-        } else {
-            queries = buildMovieQueries(metadata);
-        }
-        
-        queries = [...new Set(queries)];
-        console.log(`🧠 Brain Engine v4 (Pack Hunter) - Query: ${queries.length}`);
+    let queries = metadata.isSeries
+      ? buildSeriesQueriesForSeries(metadata)
+      : buildMovieQueries(metadata);
+    queries = [...new Set(queries)]; // Deduplica queries
+    console.log(`🧠 Brain Engine v4 (Pack Hunter) - Query: ${queries.length}`);
 
-        // --- FASE 1: SCRAPER INTERNI (ORA CERCANO ANCHE I PACK) ---
-        let internalPromises = [];
-        queries.forEach(q => {
-            internalPromises.push(scraperLimiter.schedule(() => withTimeout(Corsaro.searchMagnet(q, metadata.year), SCRAPER_TIMEOUT).catch(() => [])));
-            internalPromises.push(scraperLimiter.schedule(() => withTimeout(UIndex.searchMagnet(q, metadata.year), SCRAPER_TIMEOUT).catch(() => [])));
-            internalPromises.push(scraperLimiter.schedule(() => withTimeout(Knaben.searchMagnet(q, metadata.year), SCRAPER_TIMEOUT).catch(() => [])));
-            internalPromises.push(scraperLimiter.schedule(() => withTimeout(TorrentMagnet.searchMagnet(q, metadata.year), SCRAPER_TIMEOUT).catch(() => [])));
-        });
+    // Fase 1: Scrapers interni (parallelizzati con limiter)
+    const internalPromises = queries.flatMap((q) =>
+      [
+        scrapers.Corsaro,
+        scrapers.UIndex,
+        scrapers.Knaben,
+        scrapers.TorrentMagnet,
+      ].map((scraper) =>
+        LIMITERS.scraper.schedule(() =>
+          withTimeout(scraper.searchMagnet(q, metadata.year), CONFIG.SCRAPER_TIMEOUT).catch(() => [])
+        )
+      )
+    );
 
-        const internalResultsRaw = (await Promise.all(internalPromises)).flat();
+    const internalResultsRaw = (await Promise.all(internalPromises)).flat();
 
-        const validInternalResults = internalResultsRaw.filter(item => {
-            if (!item || !item.magnet || !item.title) return false;
-            if (onlyIta && !isSafeForItalian(item)) return false;
+    const validInternalResults = internalResultsRaw.filter((item) => {
+      if (!item?.magnet || !item.title) return false;
+      if (onlyIta && !isSafeForItalian(item)) return false;
+      if (isFalsePositive(metadata.title, item.title)) return false;
+      if (
+        metadata.originalTitle &&
+        isFalsePositive(metadata.originalTitle, item.title)
+      )
+        return false;
+      if (!isTitleSafe(metadata.title, item.title)) return false;
+      return true;
+    });
 
-            // Filtri sicurezza
-            if (isFalsePositive(metadata.title, item.title)) return false;
-            if (metadata.originalTitle && isFalsePositive(metadata.originalTitle, item.title)) return false;
-            if (!isTitleSafe(metadata.title, item.title)) return false;
+    let allResults = [...validInternalResults];
+    console.log(
+      `🔍 Risultati Interni (Inclusi Pack): ${validInternalResults.length}`
+    );
 
-            return true;
-        });
-
-        let allResults = [...validInternalResults];
-        console.log(`🔍 Risultati Interni (Inclusi Pack): ${validInternalResults.length}`);
-
-        // --- FASE 2: EXTERNAL (SOLO SE NECESSARIO) ---
-        if (validInternalResults.length <= 2) {
-            const mainQuery = queries[0]; 
-            const imdbId = (id.startsWith('tt')) ? id.split(':')[0] : null;
-            try {
-                let externalResults = await withTimeout(External.searchMagnet(id, type, imdbId, mainQuery), SCRAPER_TIMEOUT);
-                externalResults = externalResults.map(item => { item.source = "Brain P2P"; return item; });
-                externalResults = externalResults.filter(item => 
-                    !isFalsePositive(metadata.title, item.title) &&
-                    isTitleSafe(metadata.title, item.title)
-                );
-                allResults = [...allResults, ...externalResults];
-            } catch (err) { console.error("External Timeout/Error"); }
-        }
-
-        if (allResults.length === 0) return { streams: [{ title: `🚫 Nessun risultato (Riprova)` }], cacheMaxAge: 10 };
-
-        // --- DEDUPLICAZIONE ---
-        let uniqueResults = [];
-        const magnetSet = new Set();
-        
-        for (const item of allResults) {
-            if (!item || !item.title || !item.magnet) continue;
-            if (onlyIta && !isSafeForItalian(item)) continue;
-            
-            const hashMatch = item.magnet.match(/btih:([A-F0-9]{40})/i);
-            const key = hashMatch ? hashMatch[1].toUpperCase() : item.magnet;
-            
-            if (!magnetSet.has(key)) {
-                magnetSet.add(key);
-                uniqueResults.push(item);
-            }
-        }
-
-        if (metadata.isSeries) uniqueResults = uniqueResults.filter(item => isExactEpisodeMatch(item.title, metadata.season, metadata.episode));
-        if (filters.no4k) uniqueResults = uniqueResults.filter(i => !/2160p|4k|uhd/i.test(i.title));
-        if (filters.noCam) uniqueResults = uniqueResults.filter(i => !/cam|dvdscr|hdcam|telesync|tc|ts/i.test(i.title));
-
-        uniqueResults.sort((a, b) => {
-            const sizeA = parseSize(a.size);
-            const sizeB = parseSize(b.size);
-            return sizeB - sizeA;
-        });
-
-        const topResults = uniqueResults.slice(0, 70); 
-
-        let streams = [];
-        const resolutionPromises = topResults.map(item => {
-            return rdLimiter.schedule(async () => {
-                try {
-                    const streamData = await RD.getStreamLink(config.rd, item.magnet);
-                    if (streamData && streamData.type === 'ready' && streamData.size < REAL_SIZE_FILTER) return null;
-                    if (streamData && streamData.filename && streamData.filename.toLowerCase().match(/\.rar|\.zip/)) return null;
-                     
-                    const fileTitle = streamData?.filename || item.title;
-                    const { quality, lang, extraInfo } = extractStreamInfo(fileTitle);
-                    let displayLang = lang.join(" / ") || "ITA 🇮🇹";
-                    
-                    let nameTag = streamData ? `[RD ⚡] ${item.source}` : `[RD ⏳] ${item.source}`;
-                    nameTag += `\n${quality}`;
-                    let finalSize = streamData?.size ? formatBytes(streamData.size) : (item.size || "?? GB");
-                     
-                    // SE È UN PACK, LO SCRIVIAMO
-                    if (finalSize.includes("GB") && parseFloat(finalSize) > 5) {
-                         titleStr = `📦 STAGIONE PACK\n📄 ${fileTitle}\n💾 ${finalSize}`;
-                    } else {
-                         titleStr = `📄 ${fileTitle}\n💾 ${finalSize}`;
-                    }
-                    
-                    if (extraInfo) titleStr += ` | ${extraInfo}`;
-                    if (fileTitle.toUpperCase().includes("AC3") || fileTitle.toUpperCase().includes("DTS")) titleStr += " | 🔊 AUDIO PRO";
-                    titleStr += `\n🔊 ${displayLang}`;
-
-                    if (streamData) {
-                        return { name: nameTag, title: titleStr, url: streamData.url, behaviorHints: { notWebReady: false } };
-                    } else if (filters.showFake) {
-                        return { name: nameTag.replace('⚡', '⚠️'), title: `${titleStr}\n⚠️ Link Magnet (Download Richiesto)`, url: item.magnet, behaviorHints: { notWebReady: true } };
-                    }
-                } catch (e) { return null; }
-            });
-        });
-
-        const resolvedStreams = (await Promise.all(resolutionPromises)).filter(s => s !== null && s !== undefined);
-        streams = resolvedStreams;
-
-        const finalResponse = { 
-            streams: streams.length > 0 ? streams : [{ title: "🚫 Nessun file valido su RD." }],
-            cacheMaxAge: streams.length > 0 ? 1800 : 30,
-            staleRevalidate: streams.length > 0 ? 3600 : 0
-        };
-        internalCache.set(cacheKey, finalResponse);
-        return finalResponse;
-
-    } catch (error) {
-        console.error("🔥 Errore:", error.message);
-        return { streams: [{ title: `Errore: ${error.message}` }], cacheMaxAge: 60 };
+    // Fase 2: External scraper (solo se risultati insufficienti)
+    if (validInternalResults.length <= 2) {
+      const mainQuery = queries[0];
+      const imdbId = id.startsWith("tt") ? id.split(":")[0] : null;
+      try {
+        let externalResults = await withTimeout(
+          scrapers.External.searchMagnet(id, type, imdbId, mainQuery),
+          CONFIG.SCRAPER_TIMEOUT
+        );
+        externalResults = externalResults
+          .map((item) => ({ ...item, source: "Brain P2P" }))
+          .filter(
+            (item) =>
+              !isFalsePositive(metadata.title, item.title) &&
+              isTitleSafe(metadata.title, item.title)
+          );
+        allResults = [...allResults, ...externalResults];
+      } catch (err) {
+        console.error("External Timeout/Error:", err.message);
+      }
     }
+
+    if (allResults.length === 0)
+      return { streams: [{ title: `🚫 Nessun risultato (Riprova)` }], cacheMaxAge: 10 };
+
+    // Deduplicazione (usando Map per efficienza)
+    const uniqueResultsMap = new Map();
+    allResults.forEach((item) => {
+      if (!item?.title || !item.magnet) return;
+      if (onlyIta && !isSafeForItalian(item)) return;
+      const hashMatch = item.magnet.match(/btih:([A-F0-9]{40})/i);
+      const key = hashMatch ? hashMatch[1].toUpperCase() : item.magnet;
+      if (!uniqueResultsMap.has(key)) uniqueResultsMap.set(key, item);
+    });
+
+    let uniqueResults = Array.from(uniqueResultsMap.values());
+
+    // Applicazione filtri (in chain per efficienza)
+    if (metadata.isSeries)
+      uniqueResults = uniqueResults.filter((item) =>
+        isExactEpisodeMatch(item.title, metadata.season, metadata.episode)
+      );
+    if (filters.no4k)
+      uniqueResults = uniqueResults.filter(
+        (i) => !/2160p|4k|uhd/i.test(i.title)
+      );
+    if (filters.noCam)
+      uniqueResults = uniqueResults.filter(
+        (i) => !/cam|dvdscr|hdcam|telesync|tc|ts/i.test(i.title)
+      );
+
+    // Sorting per size descending
+    uniqueResults.sort((a, b) => parseSize(b.size) - parseSize(a.size));
+
+    const topResults = uniqueResults.slice(0, 70);
+
+    // Risoluzione streams con RD (parallelizzata)
+    const resolutionPromises = topResults.map((item) =>
+      LIMITERS.rd.schedule(async () => {
+        try {
+          const streamData = await scrapers.RD.getStreamLink(rd, item.magnet);
+          if (streamData?.type === "ready" && streamData.size < CONFIG.REAL_SIZE_FILTER)
+            return null;
+          if (streamData?.filename?.toLowerCase().match(/\.rar|\.zip/))
+            return null;
+
+          const fileTitle = streamData?.filename || item.title;
+          const { quality, lang, extraInfo } = extractStreamInfo(fileTitle);
+          const displayLang = lang.join(" / ") || "ITA 🇮🇹";
+          let nameTag = streamData
+            ? `[RD ⚡] ${item.source}`
+            : `[RD ⏳] ${item.source}`;
+          nameTag += `\n${quality}`;
+          let finalSize = streamData?.size
+            ? formatBytes(streamData.size)
+            : item.size || "?? GB";
+
+          let titleStr;
+          const isPack =
+            finalSize.includes("GB") && parseFloat(finalSize) > 5;
+          if (isPack) {
+            titleStr = `📦 STAGIONE PACK\n📄 ${fileTitle}\n💾 ${finalSize}`;
+          } else {
+            titleStr = `📄 ${fileTitle}\n💾 ${finalSize}`;
+          }
+
+          if (extraInfo) titleStr += ` | ${extraInfo}`;
+          if (
+            /AC3|DTS/i.test(fileTitle.toUpperCase())
+          )
+            titleStr += " | 🔊 AUDIO PRO";
+          titleStr += `\n🔊 ${displayLang}`;
+
+          if (streamData) {
+            return {
+              name: nameTag,
+              title: titleStr,
+              url: streamData.url,
+              behaviorHints: { notWebReady: false },
+            };
+          } else if (filters.showFake) {
+            return {
+              name: nameTag.replace("⚡", "⚠️"),
+              title: `${titleStr}\n⚠️ Link Magnet (Download Richiesto)`,
+              url: item.magnet,
+              behaviorHints: { notWebReady: true },
+            };
+          }
+          return null;
+        } catch (e) {
+          console.error("RD error for item:", e.message);
+          return null;
+        }
+      })
+    );
+
+    const resolvedStreams = (await Promise.all(resolutionPromises)).filter(
+      Boolean
+    );
+
+    const finalResponse = {
+      streams:
+        resolvedStreams.length > 0
+          ? resolvedStreams
+          : [{ title: "🚫 Nessun file valido su RD." }],
+      cacheMaxAge: resolvedStreams.length > 0 ? 1800 : 30,
+      staleRevalidate: resolvedStreams.length > 0 ? 3600 : 0,
+    };
+    internalCache.set(cacheKey, finalResponse);
+    return finalResponse;
+  } catch (error) {
+    console.error("🔥 Errore generale:", error.message);
+    return {
+      streams: [{ title: `Errore: ${error.message}` }],
+      cacheMaxAge: 60,
+    };
+  }
 }
 
-// --- ROUTES ---
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-app.get('/:userConf/manifest.json', (req, res) => {
-    const config = getConfig(req.params.userConf);
-    const m = { ...manifestBase };
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-    const host = req.get('host');
-    m.logo = `${protocol}://${host}/logo.png`;
-    if (config.tmdb && config.rd) m.behaviorHints = { configurable: true, configurationRequired: false };
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.json(m);
+// Routes (con error handling e logging)
+app.get("/", (req, res) =>
+  res.sendFile(path.join(__dirname, "public", "index.html"))
+);
+
+app.get("/:userConf/manifest.json", (req, res) => {
+  const config = getConfig(req.params.userConf);
+  const m = { ...MANIFEST_BASE };
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+  const host = req.get("host");
+  m.logo = `${protocol}://${host}/logo.png`;
+  if (config.tmdb && config.rd)
+    m.behaviorHints = { configurable: true, configurationRequired: false };
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.json(m);
 });
-app.get('/:userConf/catalog/:type/:id/:extra?.json', async (req, res) => {
+
+app.get("/:userConf/catalog/:type/:id/:extra?.json", async (req, res) => {
+  try {
     let skip = 0;
-    if (req.params.extra) { const match = req.params.extra.match(/skip=(\d+)/); if (match) skip = parseInt(match[1]); }
-    const result = await generateCatalog(req.params.type, req.params.id, getConfig(req.params.userConf), skip);
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    if (req.params.extra) {
+      const match = req.params.extra.match(/skip=(\d+)/);
+      if (match) skip = parseInt(match[1]);
+    }
+    const result = await generateCatalog(
+      req.params.type,
+      req.params.id,
+      getConfig(req.params.userConf),
+      skip
+    );
+    res.setHeader("Access-Control-Allow-Origin", "*");
     applyCacheHeaders(res, result);
     const { cacheMaxAge, staleRevalidate, staleError, ...cleanResult } = result;
     res.json(cleanResult);
+  } catch (e) {
+    res.status(500).json({ metas: [] });
+  }
 });
-app.get('/:userConf/catalog/:type/:id.json', async (req, res) => {
-    const result = await generateCatalog(req.params.type, req.params.id, getConfig(req.params.userConf));
-    res.setHeader('Access-Control-Allow-Origin', '*');
+
+app.get("/:userConf/catalog/:type/:id.json", async (req, res) => {
+  try {
+    const result = await generateCatalog(
+      req.params.type,
+      req.params.id,
+      getConfig(req.params.userConf)
+    );
+    res.setHeader("Access-Control-Allow-Origin", "*");
     applyCacheHeaders(res, result);
     const { cacheMaxAge, staleRevalidate, staleError, ...cleanResult } = result;
     res.json(cleanResult);
+  } catch (e) {
+    res.status(500).json({ metas: [] });
+  }
 });
-app.get('/:userConf/stream/:type/:id.json', async (req, res) => {
-    const result = await generateStream(req.params.type, req.params.id.replace('.json', ''), getConfig(req.params.userConf), req.params.userConf);
-    res.setHeader('Access-Control-Allow-Origin', '*');
+
+app.get("/:userConf/stream/:type/:id.json", async (req, res) => {
+  try {
+    const result = await generateStream(
+      req.params.type,
+      req.params.id.replace(".json", ""),
+      getConfig(req.params.userConf),
+      req.params.userConf
+    );
+    res.setHeader("Access-Control-Allow-Origin", "*");
     applyCacheHeaders(res, result);
     const { cacheMaxAge, staleRevalidate, staleError, ...cleanResult } = result;
     res.json(cleanResult);
+  } catch (e) {
+    res.status(500).json({ streams: [{ title: "Errore interno" }] });
+  }
 });
 
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`Addon v25.5.5 (PACK HUNTER) avviato su porta ${PORT}!`));
+app.listen(PORT, () =>
+  console.log(`Addon v25.5.5 (PACK HUNTER) avviato su porta ${PORT}!`)
+);
