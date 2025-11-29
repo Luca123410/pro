@@ -1,7 +1,7 @@
 {
   "name": "stremio-corsaro-unleashed",
-  "version": "25.8.3",
-  "description": "Addon Stremio Corsaro + RD (CINEMA PRO + FUZZY MATCH)",
+  "version": "25.8.4",
+  "description": "Addon Stremio Corsaro + RD (CINEMA PRO + FUZZY MATCH + SECURITY)",
   "main": "addon.js",
   "scripts": {
     "start": "node addon.js",
@@ -14,6 +14,7 @@
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "fuzzyset": "^1.0.7",
+    "helmet": "^7.1.0",
     "node-cache": "^5.1.2",
     "stremio-addon-sdk": "^1.6.9",
     "string-similarity": "^4.0.4"
