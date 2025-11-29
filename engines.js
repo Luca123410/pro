@@ -3,9 +3,8 @@ const cheerio = require("cheerio");
 const https = require("https");
 
 // --- CONFIGURAZIONE GLOBALE ---
-const TIMEOUT = 12000; // Tempo massimo per richiesta
+const TIMEOUT = 12000;
 
-// Tracker list per rivitalizzare i magnet
 const TRACKERS = [
     "udp://tracker.opentrackr.org:1337/announce",
     "udp://open.tracker.cl:1337/announce",
@@ -16,10 +15,8 @@ const TRACKERS = [
     "udp://9.rarbg.me:2970/announce"
 ];
 
-// Agent HTTPS permissivo (per siti con certificati strani come Corsaro/Knaben)
 const httpsAgent = new https.Agent({ rejectUnauthorized: false, keepAlive: true });
 
-// Headers realistici per evitare blocchi (Cloudflare)
 const COMMON_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -27,15 +24,17 @@ const COMMON_HEADERS = {
     'Referer': 'https://www.google.com/'
 };
 
-// --- HELPER CONDIVISI ---
-
+// --- HELPER ---
 function clean(title) {
     return title.replace(/[:"'’]/g, "").replace(/[^a-zA-Z0-9\s\-.\[\]]/g, " ").replace(/\s+/g, " ").trim();
 }
 
-// 🔥 FILTRO RIGOROSO PER "SOLO ITA" (Applicato a tutti i motori internazionali)
+// 🔥 FILTRO RIGOROSO: Questa regex definisce cosa è "Italiano"
 function isItalianResult(name) {
     const nameUpper = name.toUpperCase();
+    // Aggiunto controllo per escludere esplicitamente ENG se non c'è ITA
+    if (/\b(ENG|ENGLISH)\b/i.test(nameUpper) && !/\b(ITA|MULTI)\b/i.test(nameUpper)) return false;
+
     const regex = /\b(ITA|ITALIAN|ITALIANO|MULTI|DUAL|MD|SUB.?ITA|FORCED|AC3.?ITA|DTS.?ITA|CiNEFiLE|NovaRip|MeM|robbyrs|iDN_CreW)\b/i;
     return regex.test(nameUpper);
 }
@@ -64,9 +63,8 @@ function bytesToSize(bytes) {
 }
 
 // ==========================================
-// GRUPPO 1: MOTORI SPECIALIZZATI (Corsaro, Knaben, UIndex, Nyaa)
+// 1. IL CORSARO NERO (Ora Filtrato)
 // ==========================================
-
 async function searchCorsaro(title) {
     try {
         const url = `https://ilcorsaronero.link/search?q=${encodeURIComponent(clean(title))}`;
@@ -80,6 +78,10 @@ async function searchCorsaro(title) {
             if (items.length >= 30) return;
             const href = $(elem).attr('href');
             const text = $(elem).text().trim();
+            
+            // 🔥 FIX: Controlliamo se è ITA già qui. Se è ENG lo scartiamo subito.
+            if (!isItalianResult(text)) return;
+
             if (href && (href.includes('/torrent/') || href.includes('details.php')) && text.length > 5) {
                 let fullUrl = href.startsWith('http') ? href : `https://ilcorsaronero.link${href.startsWith('/') ? '' : '/'}${href}`;
                 if (!items.some(p => p.url === fullUrl)) items.push({ url: fullUrl, title: text });
@@ -104,6 +106,8 @@ async function searchCorsaro(title) {
         return (await Promise.all(promises)).filter(Boolean);
     } catch { return []; }
 }
+
+// ... (GLI ALTRI MOTORI RIMANGONO UGUALI MA USANO LA NUOVA isItalianResult) ...
 
 async function searchKnaben(title, year) {
     try {
@@ -176,17 +180,11 @@ async function searchNyaa(title) {
     } catch { return []; }
 }
 
-// ==========================================
-// GRUPPO 2: MOTORI INTERNAZIONALI (da TorrentMagnet)
-// ==========================================
-
 async function searchTPB(title, year) {
     try {
-        // Cerca SOLO "Titolo ITA" per filtrare alla fonte
         const q = `${clean(title)} ${year || ""} ITA`;
         const { data } = await axios.get("https://apibay.org/q.php", { params: { q, cat: 200 }, timeout: TIMEOUT }).catch(() => ({ data: [] }));
         if (!Array.isArray(data) || data[0]?.name === "No results returned") return [];
-        
         return data.filter(i => i.info_hash !== "0000000000000000000000000000000000000000" && isItalianResult(i.name) && checkYear(i.name, year))
             .map(i => ({
                 title: i.name,
@@ -211,7 +209,6 @@ async function search1337x(title, year) {
             const seeders = parseInt($(row).find("td").eq(1).text().replace(/,/g, "")) || 0;
             if (isItalianResult(name) && checkYear(name, year)) candidates.push({ name, link: `https://1337x.st${link}`, seeders });
         });
-
         const promises = candidates.map(async (cand) => {
             try {
                 const { data } = await axios.get(cand.link, { timeout: 6000, headers: COMMON_HEADERS });
@@ -236,10 +233,9 @@ async function searchRARBG(title, year) {
             const seeders = parseInt(tds.eq(4).text()) || 0;
             if (isItalianResult(name) && checkYear(name, year)) candidates.push({ name, link: `https://rargb.to${link}`, seeders });
         });
-
         const promises = candidates.slice(0, 5).map(async (cand) => {
             try {
-                await new Promise(r => setTimeout(r, Math.random() * 800)); // Throttle
+                await new Promise(r => setTimeout(r, Math.random() * 800));
                 const { data } = await axios.get(cand.link, { timeout: 6000, headers: COMMON_HEADERS });
                 const magnet = cheerio.load(data)("a[href^='magnet:?']").first().attr("href");
                 return magnet ? { title: cand.name, magnet, seeders: cand.seeders, size: "?", sizeBytes: 0, source: "RARBG" } : null;
@@ -286,7 +282,6 @@ async function searchLime(title, year) {
                  candidates.push({ name, link: `https://www.limetorrents.lol${link}`, seeders, sizeStr });
             }
         });
-
         const promises = candidates.slice(0, 6).map(async (cand) => {
             try {
                 const { data } = await axios.get(cand.link, { timeout: 6000, headers: COMMON_HEADERS });
@@ -298,41 +293,36 @@ async function searchLime(title, year) {
     } catch { return []; }
 }
 
-// ==========================================
-// MAIN AGGREGATOR
-// ==========================================
+// --- MAIN AGGREGATOR ---
 async function searchMagnet(title, year, type, imdbId) {
     console.log(`\n🚀 [MEGA ENGINE] Ricerca Globale: "${title}" [${year || "N/A"}]`);
     
     const promises = [
-        searchCorsaro(title),       // ITA Locale
-        searchKnaben(title, year),  // ITA/Multi Fast
-        searchUindex(title, year),  // ITA/Multi Advanced
-        searchNyaa(title),          // Anime ITA
-        searchTPB(title, year),     // International (Strict ITA)
-        search1337x(title, year),   // International (Strict ITA)
-        searchRARBG(title, year),   // International (Strict ITA)
-        searchBitSearch(title, year),// International (Strict ITA)
-        searchLime(title, year)     // International (Strict ITA)
+        searchCorsaro(title),
+        searchKnaben(title, year),
+        searchUindex(title, year),
+        searchNyaa(title),
+        searchTPB(title, year),
+        search1337x(title, year),
+        searchRARBG(title, year),
+        searchBitSearch(title, year),
+        searchLime(title, year)
     ];
 
-    // Eseguiamo tutto con allSettled per non bloccarci se un sito è down
     const resultsArrays = await Promise.allSettled(promises);
     
-    // Uniamo tutto
     const allResults = resultsArrays
         .filter(r => r.status === 'fulfilled')
         .map(r => r.value)
         .flat();
 
-    // Aggiungi tracker se mancano
     allResults.forEach(r => {
         if (r.magnet && !r.magnet.includes("tr=")) {
             TRACKERS.forEach(tr => r.magnet += `&tr=${encodeURIComponent(tr)}`);
         }
     });
 
-    console.log(`✅ [MEGA ENGINE] Totale risultati: ${allResults.length}`);
+    console.log(`✅ [MEGA ENGINE] Totale risultati ITA: ${allResults.length}`);
     return allResults;
 }
 
