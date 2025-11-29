@@ -1,51 +1,85 @@
+// rd.js - versione FIXATA per evitare errori 403 e 429
+
 const axios = require("axios");
 
-const RD_TIMEOUT = 60000; 
+const RD_TIMEOUT = 120000;
+
+function sleep(ms) {
+    return new Promise(r => setTimeout(r, ms));
+}
 
 async function rdRequest(method, url, token, data = null) {
-    try {
-        const config = {
-            method,
-            url,
-            headers: { Authorization: `Bearer ${token}` },
-            timeout: RD_TIMEOUT
-        };
-        if (data) config.data = data;
-        const response = await axios(config);
-        return response.data;
-    } catch (error) {
-        if (method === 'POST' && url.includes('addMagnet') && error.response?.status === 400) return null;
-        throw error;
+    let attempt = 0;
+    while (attempt < 4) {
+        try {
+            const config = {
+                method,
+                url,
+                headers: { Authorization: `Bearer ${token}` },
+                timeout: RD_TIMEOUT
+            };
+            if (data) config.data = data;
+            const response = await axios(config);
+            return response.data;
+        } catch (error) {
+            const status = error.response?.status;
+            
+            // 403 → non abbiamo accesso, inutile riprovare
+            if (status === 403) return null;
+
+            // 429 → rate limit → aspetta e ritenta
+            if (status === 429) {
+                await sleep(1000 + Math.random() * 1000);
+                attempt++;
+                continue;
+            }
+
+            // 500 → ritenta
+            if (status >= 500) {
+                await sleep(500 + Math.random() * 500);
+                attempt++;
+                continue;
+            }
+
+            return null;
+        }
     }
+    return null;
 }
 
 const RD = {
-    // --- NUOVA FUNZIONE PER VELOCITÀ ---
     checkInstantAvailability: async (token, hashes) => {
         try {
-            // RD API vuole gli hash uniti da /
             const hashString = hashes.join('/');
             const url = `https://api.real-debrid.com/rest/1.0/torrents/instantAvailability/${hashString}`;
             const data = await rdRequest('GET', url, token);
             return data || {};
         } catch (e) {
-            console.log("⚠️ Instant Check Error:", e.message);
             return {};
         }
     },
 
     getStreamLink: async (token, magnet) => {
+        // PRIMA: verifica se RD è online→ se no non tentare
+        try {
+            const ping = await rdRequest('GET', 'https://api.real-debrid.com/rest/1.0/user', token);
+            if (!ping) return null;
+        } catch {
+            return null;
+        }
+
         try {
             const addUrl = "https://api.real-debrid.com/rest/1.0/torrents/addMagnet";
             const body = new URLSearchParams();
             body.append("magnet", magnet);
-            
+
             const addRes = await rdRequest('POST', addUrl, token, body);
-            if (!addRes || !addRes.id) throw new Error("Add Failed");
+            if (!addRes || !addRes.id) return null;
             const torrentId = addRes.id;
 
             let info = await rdRequest('GET', `https://api.real-debrid.com/rest/1.0/torrents/info/${torrentId}`, token);
-            
+            if (!info) return null;
+
             if (info.status === 'waiting_files_selection') {
                 const selUrl = `https://api.real-debrid.com/rest/1.0/torrents/selectFiles/${torrentId}`;
                 const selBody = new URLSearchParams();
@@ -54,27 +88,24 @@ const RD = {
                 info = await rdRequest('GET', `https://api.real-debrid.com/rest/1.0/torrents/info/${torrentId}`, token);
             }
 
-            if (info.status === 'downloaded' && info.links && info.links.length > 0) {
-                // Prende il file più grande
-                const videoFiles = info.files.filter(f => f.selected && f.bytes > 10 * 1024 * 1024);
-                // Logica semplice: prendiamo il primo link sbloccabile
-                const linkToUnrestrict = info.links[0]; 
+            if (!info || !info.links?.length) return null;
 
-                const unrestrictUrl = "https://api.real-debrid.com/rest/1.0/unrestrict/link";
-                const unResBody = new URLSearchParams();
-                unResBody.append("link", linkToUnrestrict);
-                
-                const unrestrictRes = await rdRequest('POST', unrestrictUrl, token, unResBody);
+            const linkToUnrestrict = info.links[0];
 
-                return {
-                    type: 'ready',
-                    url: unrestrictRes.download,
-                    filename: unrestrictRes.filename,
-                    size: unrestrictRes.filesize
-                };
-            }
-            return null;
-        } catch (e) { throw e; }
+            const unrestrictUrl = "https://api.real-debrid.com/rest/1.0/unrestrict/link";
+            const unResBody = new URLSearchParams();
+            unResBody.append("link", linkToUnrestrict);
+
+            const unrestrictRes = await rdRequest('POST', unrestrictUrl, token, unResBody);
+            if (!unrestrictRes) return null;
+
+            return {
+                type: 'ready',
+                url: unrestrictRes.download,
+                filename: unrestrictRes.filename,
+                size: unrestrictRes.filesize
+            };
+        } catch (e) { return null; }
     }
 };
 
