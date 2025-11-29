@@ -1,4 +1,4 @@
-// addon.js - Corsaro Brain ITA FULL WAIT v25.8.2
+// addon.js - Corsaro Brain ITA FULL WAIT + QUALITÀ FIGA v25.8.3
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
@@ -42,10 +42,10 @@ const internalCache = new NodeCache({ stdTTL: CACHE_TTL.STD, checkperiod: CACHE_
 
 // --- MANIFEST ---
 const MANIFEST_BASE = Object.freeze({
-  id: "org.community.corsaro-brain-ita-fullwait",
-  version: "25.8.2",
-  name: "Corsaro + TorrentMagnet (FULL WAIT)",
-  description: "🇮🇹 Tutti i risultati ITA, RD sicuri, risposta solo quando tutto pronto",
+  id: "org.community.corsaro-brain-ita-fullwait-quality",
+  version: "25.8.3",
+  name: "Corsaro + TorrentMagnet (FULL WAIT + QUALITÀ FIGA)",
+  description: "🇮🇹 Tutti i risultati ITA, RD sicuro, qualità visibile, risposta solo quando tutto pronto",
   resources: ["catalog", "stream"],
   types: ["movie","series"],
   catalogs:[
@@ -118,6 +118,7 @@ function extractStreamInfo(title){
   return { quality:q, info:extras.join(" | "), lang };
 }
 
+// --- RESOLVE RD LINK WITH COOL NAME ---
 async function resolveRdLink(rdKey,item,meta,showFake){
   try{
     const streamData=await scrapers.RD.getStreamLink(rdKey,item.magnet);
@@ -126,17 +127,16 @@ async function resolveRdLink(rdKey,item,meta,showFake){
     if(streamData.filename?.match(/\.(rar|zip|exe|txt)$/i)) return null;
     const fileTitle=streamData.filename||item.title;
     const { quality, info, lang }=extractStreamInfo(fileTitle);
-    const size=streamData.size?formatBytes(streamData.size):(item.size||"?? GB");
-    let titleStr=`📄 ${fileTitle}\n💾 ${size} | ${quality}`;
-    if(info) titleStr+=` | ${info}`; titleStr+=`\n🔊 ${lang}`;
-    return { name:`[RD ⚡] ${item.source}`, title:titleStr, url:streamData.url, behaviorHints:{notWebReady:false,bingieGroup:"corsaro-rd"} };
+    const titleStr=`📄 ${fileTitle}\n💾 ${streamData.size?formatBytes(streamData.size):(item.size||"?? GB")} | ${quality}${info?` | ${info}`:""}\n🔊 ${lang}`;
+    const emoji="🚀"; // puoi cambiare con 🔥 💎 ecc
+    return { name:`[RD ${emoji} ${quality}] ${item.source}`, title:titleStr, url:streamData.url, behaviorHints:{notWebReady:false,bingieGroup:"corsaro-rd"} };
   }catch(e){
-    if(showFake) return { name:`[P2P ⚠️] ${item.source}`, title:`${item.title}\n⚠️ Cache RD Assente`, url:item.magnet, behaviorHints:{notWebReady:true} };
+    if(showFake) return { name:`[P2P ⚠️ ${extractStreamInfo(item.title).quality}] ${item.source}`, title:`${item.title}\n⚠️ Cache RD Assente`, url:item.magnet, behaviorHints:{notWebReady:true} };
     return null;
   }
 }
 
-// --- STREAM GENERATOR FULL WAIT ---
+// --- STREAM GENERATOR FULL WAIT + QUALITÀ FIGA ---
 async function generateStream(type,id,config,userConfStr){
   if(!config.rd) return { streams:[{ name:"⚠️ CONFIG", title:"Serve RealDebrid API Key" }] };
   const cacheKey=`str:${userConfStr}:${type}:${id}`;
@@ -145,14 +145,14 @@ async function generateStream(type,id,config,userConfStr){
   const queries=meta.isSeries?buildSeriesQueries(meta):buildMovieQueries(meta);
   const onlyIta=config.filters?.onlyIta!==false;
 
-  // 1. Raccogli tutti i principali scraper
+  // 1. principali scraper
   const mainScrapers=[scrapers.Corsaro,scrapers.UIndex,scrapers.TorrentMagnet,scrapers.Knaben];
   let promises=[];
   queries.forEach(q=>mainScrapers.forEach(s=>promises.push(LIMITERS.scraper.schedule(()=>withTimeout(s.searchMagnet(q,meta.year,type,id.split(":")[0]),CONFIG.SCRAPER_TIMEOUT).catch(()=>[])))));
   let resultsRaw=(await Promise.all(promises)).flat();
   resultsRaw=resultsRaw.filter(item=>item?.magnet && isTitleSafe(meta.title,item.title) && (!onlyIta || isSafeForItalian(item)));
 
-  // 2. External se risultati <5
+  // 2. External se <5 risultati
   if(resultsRaw.length<5){
     const extPromises=[];
     queries.forEach(q=>extPromises.push(LIMITERS.scraper.schedule(()=>withTimeout(scrapers.External.searchMagnet(q,meta.year,type,id.split(":")[0]),CONFIG.SCRAPER_TIMEOUT).catch(()=>[]))));
@@ -160,7 +160,7 @@ async function generateStream(type,id,config,userConfStr){
     resultsRaw=[...resultsRaw,...extResults.filter(i=>i?.magnet && isSafeForItalian(i) && isTitleSafe(meta.title,i.title))];
   }
 
-  // 3. Filtri finali e ordinamento
+  // 3. filtri finali e ordinamento
   const seen=new Set(); let cleanResults=[];
   for(const item of resultsRaw){
     if(!item?.magnet) continue;
@@ -184,7 +184,7 @@ async function generateStream(type,id,config,userConfStr){
   cleanResults=cleanResults.slice(0,CONFIG.MAX_RESULTS);
   if(!cleanResults.length) return { streams:[{ name:"⛔", title:"Nessun risultato trovato" }] };
 
-  // 4. RD link: attendi tutti prima di rispondere
+  // 4. RD link
   const rdPromises=cleanResults.map(item=>LIMITERS.rd.schedule(()=>resolveRdLink(config.rd,item,meta,config.filters?.showFake)));
   const streams=(await Promise.all(rdPromises)).filter(Boolean);
   if(!streams.length) streams.push({ name:"⚠️ INFO", title:"Trovati torrent ma nessun link RD attivo." });
@@ -216,4 +216,4 @@ app.get("/:conf/stream/:type/:id.json",async(req,res)=>{ const result=await gene
 
 // --- START SERVER ---
 const PORT=process.env.PORT||7000;
-app.listen(PORT,()=>console.log(`🚀 Corsaro Brain FULL WAIT v25.8.2 on port ${PORT}`));
+app.listen(PORT,()=>console.log(`🚀 Corsaro Brain FULL WAIT + QUALITÀ FIGA v25.8.3 on port ${PORT}`));
