@@ -1,21 +1,22 @@
 {
   "name": "stremio-corsaro-unleashed",
-  "version": "23.9.0",
-  "description": "Addon Stremio Corsaro + RD (TURBO + CACHE + SMART)",
+  "version": "25.8.3",
+  "description": "Addon Stremio Corsaro + RD (CINEMA PRO + FUZZY MATCH)",
   "main": "addon.js",
   "scripts": {
     "start": "node addon.js",
     "dev": "nodemon addon.js"
   },
   "dependencies": {
-    "bottleneck": "^2.19.5",
-    "express": "^4.19.2",
-    "cors": "^2.8.5",
     "axios": "^1.6.8",
+    "bottleneck": "^2.19.5",
     "cheerio": "^1.0.0-rc.12",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "fuzzyset": "^1.0.7",
     "node-cache": "^5.1.2",
-    "string-similarity": "^4.0.4",
-    "stremio-addon-sdk": "^1.6.9"
+    "stremio-addon-sdk": "^1.6.9",
+    "string-similarity": "^4.0.4"
   },
   "engines": {
     "node": ">=18.0.0"
