@@ -1,9 +1,10 @@
-// Corsaro Brain - CAPOLAVORO (Stile: CINEMA PRO)
-// Versione: 25.8.3-capolavoro
-// Features: Fuzzy Match, RD Instant Check, Extended Media Tags, Dynamic Scrapers
+// Corsaro Brain - CAPOLAVORO (Stile: CINEMA PRO + SECURITY + MULTI FORZATO)
+// Versione: 25.8.4-multi-ita
+// Features: Fuzzy Match, Helmet Security, Cinema Layout, MULTI=ITA
 
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet"); // SICUREZZA
 const path = require("path");
 const axios = require("axios");
 const NodeCache = require("node-cache");
@@ -30,7 +31,6 @@ const LIMITERS = {
 };
 
 // --- MODULI SCRAPER (Array Dinamico) ---
-// Per aggiungere un nuovo scraper, basta inserirlo qui.
 const SCRAPER_MODULES = [
   require("./rd"),            // Modulo RD interno
   require("./corsaro"),       // Corsaro (Main)
@@ -46,6 +46,7 @@ const FALLBACK_SCRAPERS = [
 
 // --- APP & CACHE ---
 const app = express();
+app.use(helmet()); // ATTIVA PROTEZIONE HEADER
 app.use(cors());
 app.use(express.static(path.join(__dirname, "public")));
 const internalCache = new NodeCache({ stdTTL: CACHE_TTL.STD, checkperiod: CACHE_TTL.CHECK, useClones: false });
@@ -53,9 +54,9 @@ const internalCache = new NodeCache({ stdTTL: CACHE_TTL.STD, checkperiod: CACHE_
 // --- MANIFEST ---
 const MANIFEST_BASE = Object.freeze({
   id: "org.community.corsaro-brain-ita-capolavoro",
-  version: "25.8.3-capolavoro",
+  version: "25.8.4",
   name: "Corsaro + TorrentMagnet (CINEMA PRO)",
-  description: "🇮🇹 Risultati ITA, Fuzzy Match, RD Instant, Tag Audio/Video Pro",
+  description: "🇮🇹 Risultati ITA, Fuzzy Match, RD Instant, Layout Cinema",
   resources: ["catalog", "stream"],
   types: ["movie", "series"],
   catalogs: [
@@ -68,7 +69,7 @@ const MANIFEST_BASE = Object.freeze({
   behaviorHints: { configurable: true, configurationRequired: true },
 });
 
-// --- UTILITIES AVANZATE ---
+// --- UTILITIES ---
 
 const UNITS = ["B", "KB", "MB", "GB", "TB"];
 function formatBytes(bytes) {
@@ -100,18 +101,14 @@ function isTitleSafe(metaTitle, filename) {
   const q = normalize(metaTitle);
   const f = normalize(filename);
 
-  // 1. Controllo base
   if (q.length < 5) return f.includes(q);
   if (f.includes(q)) return true;
 
-  // 2. Fuzzy Check
   try {
     const fs = FuzzySet([q]);
     const match = fs.get(f);
-    // Se il match più alto supera la soglia (0.7 = 70%)
     if (match && match[0][0] > CONFIG.FUZZY_THRESHOLD) return true;
   } catch (e) {
-    // Fallback in caso di errore fuzzy
     const kws = q.split(" ").filter(w => w.length > 3);
     const matches = kws.filter(k => f.includes(k));
     return matches.length >= Math.ceil(kws.length * 0.7);
@@ -119,50 +116,43 @@ function isTitleSafe(metaTitle, filename) {
   return false;
 }
 
-// ** ITALIAN FILTER **
+// ** ITALIAN FILTER (ACCETTA TUTTO I MULTI) **
 function isSafeForItalian(item) {
   if (!item || !item.title) return false;
-  if (item.source === "Corsaro" || item.source === "Gams") return true; // Fonti fidate
-  const t = String(item.title).toUpperCase();
-  // Regex stretta per evitare falsi positivi (es. "Digital")
-  if (/\bITA\b/.test(t) || /\bITALIAN\b/.test(t)) return true;
-  return false;
+  
+  const trusted = ["Corsaro", "Gams", "TorrentMagnet", "Marrow", "P2P"];
+  if (trusted.includes(item.source)) return true;
+
+  // Accetta ITA, ITALIAN, IT e anche MULTI/MUI
+  const strictRegex = /\b(ITA|ITALIAN|IT|MULTI|MUI)\b/i;
+  
+  return strictRegex.test(item.title);
 }
 
 // --- NUOVE UTILITIES PER UN LOOK "FIGHISSIMO" ---
 
-/**
- * Pulisce il nome del file grezzo per renderlo leggibile.
- * Es: "Avengers.Infinity.War.2018.2160p.BluRay..." -> "Avengers: Infinity War (2018)"
- */
 function cleanFilename(filename) {
   if (!filename) return "";
-  
-  // 1. Trova l'anno (es. 2018, 2023) per capire dove finisce il titolo
   const yearMatch = filename.match(/(19|20)\d{2}/);
   let cleanTitle = filename;
   let year = "";
   
   if (yearMatch) {
     year = ` (${yearMatch[0]})`;
-    // Prendi tutto ciò che c'è prima dell'anno
     cleanTitle = filename.substring(0, yearMatch.index);
   }
 
-  // 2. Sostituisci punti e underscore con spazi
   cleanTitle = cleanTitle.replace(/[._]/g, " ").trim();
-
-  // 3. Rimuovi eventuali tag rimasti alla fine (es. "S01E01" o altri residui)
-  cleanTitle = cleanTitle.replace(/ s\d+e\d+.*$/i, ""); // Per le serie, pulisce dopo l'episodio
+  cleanTitle = cleanTitle.replace(/ s\d+e\d+.*$/i, ""); 
   
   return `${cleanTitle}${year}`;
 }
 
-// ** EXTENDED MEDIA TAGS (Aggiornata con nuove icone) **
+// ** EXTENDED MEDIA TAGS (MULTI = BANDIERA ITA) **
 function extractStreamInfo(title) {
   const t = String(title).toLowerCase();
   
-  // Video Resolution (Icona Qualità)
+  // Video Resolution
   let q = "HD";
   let qIcon = "📺";
   if (/2160p|4k|uhd/.test(t)) { q = "4K"; qIcon = "✨"; }
@@ -173,7 +163,7 @@ function extractStreamInfo(title) {
   const videoTags = [];
   const audioTags = [];
   
-  // Video Tech (Icona ✨)
+  // Video Tech
   if (/hdr/.test(t)) videoTags.push("HDR");
   if (/dolby|vision|\bdv\b/.test(t)) videoTags.push("DV");
   if (/imax/.test(t)) videoTags.push("IMAX");
@@ -181,7 +171,7 @@ function extractStreamInfo(title) {
   if (/10bit/.test(t)) videoTags.push("10bit");
   if (/3d/.test(t)) videoTags.push("3D");
 
-  // Audio Tech (Icona 🔊)
+  // Audio Tech
   if (/atmos/.test(t)) audioTags.push("Atmos");
   if (/dts:?x?|\bdts\b/.test(t)) audioTags.push("DTS");
   if (/truehd/.test(t)) audioTags.push("TrueHD");
@@ -189,40 +179,37 @@ function extractStreamInfo(title) {
   if (/5\.1/.test(t)) audioTags.push("5.1");
   if (/7\.1/.test(t)) audioTags.push("7.1");
 
-  // Language (Icona Bandiera)
-  let lang = "🇬🇧 ENG";
-  if (/\bita\b/.test(t)) lang = "🇮🇹 ITA";
-  else if (/multi/.test(t)) lang = "🌐 MULTI";
+  // --- LOGICA LINGUA FORZATA ---
+  let lang = "🇬🇧 ENG"; 
 
-  // Costruiamo la stringa dei dettagli in modo figo
+  // Se c'è ITA
+  if (/\b(ita|italian|it)\b/i.test(t)) {
+      lang = "🇮🇹 ITA";
+  } 
+  // Se c'è MULTI -> FORZIAMO LA BANDIERA ITA
+  else if (/multi|mui/i.test(t)) {
+      lang = "🇮🇹 MULTI"; 
+  }
+
   let detailsParts = [];
   if (videoTags.length) detailsParts.push(`✨ ${videoTags.join(" ")}`);
   if (audioTags.length) detailsParts.push(`🔊 ${audioTags.join(" ")}`);
   
-  // Uniamo con un separatore elegante
   const info = detailsParts.join(" • ");
 
   return { quality: q, qIcon, info, lang };
 }
 
-// ** FORMATTAZIONE OUTPUT "CINEMA PRO" (Il tocco finale) **
+// ** FORMATTAZIONE OUTPUT (Layout 🌠) **
 function formatStreamTitleCinePro(fileTitle, source, size) {
   const { quality, qIcon, info, lang } = extractStreamInfo(fileTitle);
   
-  // 1. Dimensione con icona "Pacco"
   const sizeStr = size ? `📦 ${formatBytes(size)}` : "📦 ?";
-  
-  // 2. Titolo Pulito (La parte più importante!)
   const cleanTitleDisplay = cleanFilename(fileTitle);
   
-  // --- COSTRUZIONE DEL RISULTATO ---
-  
-  // RIGA 1 (Nome Sorgente): [RD 🛡️ ✨ 4K] Knaben
+  // Layout: [RD 🌠 ✨ 4K] Fonte
   const name = `[RD 🌠 ${qIcon} ${quality}] ${source}`;
   
-  // RIGA 2 (Titolo + Dettagli):
-  // Avengers: Infinity War (2018)
-  // 📦 59.8 GB • ✨ HDR DV IMAX • 🔊 Atmos • 🇮🇹 ITA
   const detailsLine = [sizeStr, info, lang].filter(Boolean).join(" • ");
   const title = `${cleanTitleDisplay}\n${detailsLine}`;
   
@@ -272,7 +259,7 @@ async function getMetadata(id, type, tmdbKey) {
       episode: parseInt(e)
     } : null;
 
-    // Arricchimento TMDB (se Key presente)
+    // Arricchimento TMDB
     if (tmdbKey) {
       let url;
       if (tmdbId.startsWith("tt")) url = `https://api.themoviedb.org/3/find/${tmdbId}?api_key=${tmdbKey}&language=it-IT&external_source=imdb_id`;
@@ -303,37 +290,29 @@ async function getMetadata(id, type, tmdbKey) {
 // --- REAL-DEBRID: INSTANT AVAILABILITY CHECK ---
 async function resolveRdLinkOptimized(rdKey, item, meta, showFake) {
   try {
-    // 1. Check Instant Availability
     const hash = item.magnet.match(/btih:([a-f0-9]{40})/i)?.[1];
     let isInstant = false;
     
     if (hash) {
-      const ia = await SCRAPER_MODULES[0].checkInstantAvailability(rdKey, [hash]); // Uso il modulo RD interno
+      const ia = await SCRAPER_MODULES[0].checkInstantAvailability(rdKey, [hash]); 
       if (ia && ia[hash] && ia[hash].rd && ia[hash].rd.length > 0) {
         isInstant = true;
       }
     }
 
-    // 2. Se non è instant e non vogliamo fake, scartiamo (opzionale, qui processiamo tutto)
-    // Nota: RD richiede comunque di aggiungere il magnet per avere il link di download.
-    // L'instant check ci serve per aggiungere l'icona ⚡ o prioritizzare.
-
     const streamData = await SCRAPER_MODULES[0].getStreamLink(rdKey, item.magnet);
     if (!streamData) return null;
 
-    // Filtri RD
     if (streamData.type === "ready" && streamData.size < CONFIG.REAL_SIZE_FILTER) return null;
     if (streamData.filename?.match(/\.(rar|zip|exe|txt|nfo|jpg)$/i)) return null;
 
     const fileTitle = streamData.filename || item.title;
     const sizeVal = streamData.size || item.size;
     
-    // Aggiungi un fulmine al nome se era cached
     const { name, title } = formatStreamTitleCinePro(fileTitle, item.source, sizeVal);
-    const instantName = isInstant ? `⚡ ${name}` : name;
-
+    
     return { 
-      name: instantName, 
+      name: name, 
       title: title, 
       url: streamData.url, 
       behaviorHints: { notWebReady: false, bingieGroup: "corsaro-rd" } 
@@ -343,7 +322,7 @@ async function resolveRdLinkOptimized(rdKey, item, meta, showFake) {
     if (showFake) {
        return { 
          name: `[P2P ⚠️] ${item.source}`, 
-         title: `${item.title}\n⚠️ Cache RD Assente\nMagnet Link`, 
+         title: `${item.title}\n⚠️ Cache RD Assente`, 
          url: item.magnet, 
          behaviorHints: { notWebReady: true } 
        };
@@ -352,43 +331,53 @@ async function resolveRdLinkOptimized(rdKey, item, meta, showFake) {
   }
 }
 
-// --- RANKING ALGORITHM ---
+// --- RANKING ALGORITHM (BOOST MULTI & ITA) ---
 function rankAndFilterResults(results, meta, config) {
   return results.map(item => {
     const info = extractStreamInfo(item.title || "");
     const size = item._size || parseSize(item.size) || 0;
     let score = 0;
 
-    // 1. Language Boost (Cruciale)
-    if (/\bita\b|italian/i.test(item.title || "")) score += 5000;
-    else if (/multi/i.test(item.title)) score += 2500;
+    // 1. Language Boost (ITA e MULTI valgono uguale ora)
+    if (info.lang.includes("ITA") || info.lang.includes("MULTI")) {
+        score += 5000;
+    }
 
     // 2. Resolution
     if (info.quality === "4K") score += 1200;
     else if (info.quality === "1080p") score += 800;
     else if (info.quality === "720p") score += 400;
 
-    // 3. Audio/Video Tech Boost
+    // 3. Tech Boost
     if (/atmos/i.test(info.info)) score += 300;
-    if (/vision|dv/i.test(info.info)) score += 250; // Dolby Vision
+    if (/vision|dv/i.test(info.info)) score += 250;
     if (/hdr/i.test(info.info)) score += 200;
-    if (/imax/i.test(info.info)) score += 150;
     if (/dts/i.test(info.info)) score += 100;
 
     // 4. Source Reliability
     if (item.source === "Corsaro") score += 500;
-    if (item.source === "TorrentMagnet") score += 300;
 
-    // 5. Size Logic (Bigger is better fino a un certo punto)
-    // Aggiunge 1 punto per ogni 100MB, capped a 1000 punti
+    // 5. Size Logic
     score += Math.min(Math.floor(size / (1024 * 1024 * 100)), 1000);
 
     // 6. Keywords
     if (/remux/i.test(item.title)) score += 400;
-    if (/web-?dl|webrip/i.test(item.title)) score += 200;
+    
+    // Series Logic
+    if (meta.isSeries) {
+        const s = String(meta.season).padStart(2, "0");
+        const e = String(meta.episode).padStart(2, "0");
+        const exactEpRegex = new RegExp(`S${s}E${e}|${meta.season}x${e}\\b`, "i");
+        
+        if (exactEpRegex.test(item.title)) {
+            score += 1500;
+        } else if (/pack|season|stagione|complete/i.test(item.title)) {
+            score -= 200; 
+        }
+    }
 
-    // 7. Penalties
-    if (/cam|ts|tc|screener/i.test(item.title)) score -= 10000; // Nuclear penalty
+    // Penalties
+    if (/cam|ts|tc|screener/i.test(item.title)) score -= 10000;
 
     return { item, score };
   })
@@ -412,7 +401,6 @@ async function generateStream(type, id, config, userConfStr) {
   let promises = [];
   queries.forEach(q => {
     SCRAPER_MODULES.forEach(scraper => {
-      // Controllo se il modulo ha la funzione (alcuni potrebbero non supportare searchMagnet)
       if (scraper.searchMagnet) {
         promises.push(
           LIMITERS.scraper.schedule(() => 
@@ -430,10 +418,10 @@ async function generateStream(type, id, config, userConfStr) {
   resultsRaw = resultsRaw.filter(item => 
     item?.magnet && 
     isTitleSafe(meta.title, item.title) && 
-    (!onlyIta || isSafeForItalian(item))
+    (!onlyIta || isSafeForItalian(item)) // Ora isSafeForItalian accetta MULTI
   );
 
-  // Fallback Esterno se scarsi risultati
+  // Fallback
   if (resultsRaw.length < 5) {
     const extPromises = [];
     queries.forEach(q => {
@@ -452,11 +440,9 @@ async function generateStream(type, id, config, userConfStr) {
     const hash = item.magnet.match(/btih:([a-f0-9]{40})/i)?.[1].toUpperCase() || item.magnet;
     if (seen.has(hash)) continue;
     
-    // Filtri Utente
     if (config.filters?.no4k && /2160p|4k|uhd/i.test(item.title)) continue;
     if (config.filters?.noCam && /cam|tc|ts/i.test(item.title)) continue;
     
-    // Strict Series Check
     if (meta.isSeries) {
       const s = meta.season, e = meta.episode;
       const matchEp = new RegExp(`s0?${s}[xe]0?${e}`, "i").test(item.title);
@@ -471,10 +457,10 @@ async function generateStream(type, id, config, userConfStr) {
 
   if (!cleanResults.length) return { streams: [{ name: "⛔", title: "Nessun risultato trovato" }] };
 
-  // Ranking & Sorting
+  // Ranking
   const ranked = rankAndFilterResults(cleanResults, meta, config).slice(0, CONFIG.MAX_RESULTS);
 
-  // Resolve RD (Optimized with Instant Check inside)
+  // Resolve RD
   const rdPromises = ranked.map(item => 
     LIMITERS.rd.schedule(() => resolveRdLinkOptimized(config.rd, item, meta, config.filters?.showFake))
   );
@@ -565,4 +551,4 @@ function getConfig(configStr) {
 
 // --- START ---
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`🚀 Corsaro Brain CAPOLAVORO v25.8.3 su porta ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Corsaro Brain CAPOLAVORO v25.8.4 su porta ${PORT}`));
