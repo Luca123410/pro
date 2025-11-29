@@ -401,11 +401,19 @@ app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.ht
 
 app.get("/:conf/manifest.json", (req, res) => {
   const m = { ...MANIFEST_BASE };
+  
+  // --- MODIFICA IMPORTANTE ---
+  // Sovrascriviamo behaviorHints per dire a Stremio che è pronto per l'installazione
+  m.behaviorHints = { 
+      configurable: true, 
+      configurationRequired: false // <--- Questo fa apparire il pulsante "Installa"
+  };
+  // ---------------------------
+
   m.logo = `${req.protocol}://${req.get("host")}/logo.png`;
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.json(m);
 });
-
 app.get("/:conf/catalog/:type/:id/:extra?.json", async (req, res) => {
   const skip = req.params.extra?.match(/skip=(\d+)/)?.[1] || 0;
   const result = await generateCatalog(req.params.type, req.params.id, getConfig(req.params.conf), parseInt(skip));
