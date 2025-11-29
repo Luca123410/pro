@@ -129,54 +129,102 @@ function isSafeForItalian(item) {
   return false;
 }
 
-// ** EXTENDED MEDIA TAGS (Cinema Pro) **
+// --- NUOVE UTILITIES PER UN LOOK "FIGHISSIMO" ---
+
+/**
+ * Pulisce il nome del file grezzo per renderlo leggibile.
+ * Es: "Avengers.Infinity.War.2018.2160p.BluRay..." -> "Avengers: Infinity War (2018)"
+ */
+function cleanFilename(filename) {
+  if (!filename) return "";
+  
+  // 1. Trova l'anno (es. 2018, 2023) per capire dove finisce il titolo
+  const yearMatch = filename.match(/(19|20)\d{2}/);
+  let cleanTitle = filename;
+  let year = "";
+  
+  if (yearMatch) {
+    year = ` (${yearMatch[0]})`;
+    // Prendi tutto ciò che c'è prima dell'anno
+    cleanTitle = filename.substring(0, yearMatch.index);
+  }
+
+  // 2. Sostituisci punti e underscore con spazi
+  cleanTitle = cleanTitle.replace(/[._]/g, " ").trim();
+
+  // 3. Rimuovi eventuali tag rimasti alla fine (es. "S01E01" o altri residui)
+  cleanTitle = cleanTitle.replace(/ s\d+e\d+.*$/i, ""); // Per le serie, pulisce dopo l'episodio
+  
+  return `${cleanTitle}${year}`;
+}
+
+// ** EXTENDED MEDIA TAGS (Aggiornata con nuove icone) **
 function extractStreamInfo(title) {
   const t = String(title).toLowerCase();
   
-  // Video Resolution
+  // Video Resolution (Icona Qualità)
   let q = "HD";
-  if (/2160p|4k|uhd/.test(t)) q = "4K";
-  else if (/1080p/.test(t)) q = "1080p";
-  else if (/720p/.test(t)) q = "720p";
-  else if (/480p|\bsd\b/.test(t)) q = "SD";
+  let qIcon = "📺";
+  if (/2160p|4k|uhd/.test(t)) { q = "4K"; qIcon = "✨"; }
+  else if (/1080p/.test(t)) { q = "1080p"; qIcon = "🌕"; }
+  else if (/720p/.test(t)) { q = "720p"; qIcon = "🌗"; }
+  else if (/480p|\bsd\b/.test(t)) { q = "SD"; qIcon = "🌑"; }
 
-  const extras = [];
+  const videoTags = [];
+  const audioTags = [];
   
-  // Video Tech
-  if (/hdr/.test(t)) extras.push("HDR");
-  if (/dolby|vision|\bdv\b/.test(t)) extras.push("DV"); // Dolby Vision
-  if (/imax/.test(t)) extras.push("IMAX");
-  if (/h265|hevc|x265/.test(t)) extras.push("HEVC");
-  if (/10bit/.test(t)) extras.push("10bit");
-  if (/3d/.test(t)) extras.push("3D");
+  // Video Tech (Icona ✨)
+  if (/hdr/.test(t)) videoTags.push("HDR");
+  if (/dolby|vision|\bdv\b/.test(t)) videoTags.push("DV");
+  if (/imax/.test(t)) videoTags.push("IMAX");
+  if (/h265|hevc|x265/.test(t)) videoTags.push("HEVC");
+  if (/10bit/.test(t)) videoTags.push("10bit");
+  if (/3d/.test(t)) videoTags.push("3D");
 
-  // Audio Tech
-  if (/atmos/.test(t)) extras.push("Atmos");
-  if (/dts:?x?|\bdts\b/.test(t)) extras.push("DTS");
-  if (/truehd/.test(t)) extras.push("TrueHD");
-  if (/dd\+|eac3/.test(t)) extras.push("DD+");
-  if (/5\.1/.test(t)) extras.push("5.1");
-  if (/7\.1/.test(t)) extras.push("7.1");
+  // Audio Tech (Icona 🔊)
+  if (/atmos/.test(t)) audioTags.push("Atmos");
+  if (/dts:?x?|\bdts\b/.test(t)) audioTags.push("DTS");
+  if (/truehd/.test(t)) audioTags.push("TrueHD");
+  if (/dd\+|eac3/.test(t)) audioTags.push("DD+");
+  if (/5\.1/.test(t)) audioTags.push("5.1");
+  if (/7\.1/.test(t)) audioTags.push("7.1");
 
-  // Language
-  let lang = "ENG/SUB 🇬🇧";
-  if (/\bita\b/.test(t)) lang = "ITA 🇮🇹";
-  else if (/multi/.test(t)) lang = "MULTI 🌐";
+  // Language (Icona Bandiera)
+  let lang = "🇬🇧 ENG";
+  if (/\bita\b/.test(t)) lang = "🇮🇹 ITA";
+  else if (/multi/.test(t)) lang = "🌐 MULTI";
 
-  return { quality: q, info: extras.join(" | "), lang };
+  // Costruiamo la stringa dei dettagli in modo figo
+  let detailsParts = [];
+  if (videoTags.length) detailsParts.push(`✨ ${videoTags.join(" ")}`);
+  if (audioTags.length) detailsParts.push(`🔊 ${audioTags.join(" ")}`);
+  
+  // Uniamo con un separatore elegante
+  const info = detailsParts.join(" • ");
+
+  return { quality: q, qIcon, info, lang };
 }
 
-// Formattazione Output Stremio
+// ** FORMATTAZIONE OUTPUT "CINEMA PRO" (Il tocco finale) **
 function formatStreamTitleCinePro(fileTitle, source, size) {
-  const { quality, info, lang } = extractStreamInfo(fileTitle);
-  const sizeStr = size ? `💾 ${formatBytes(size)}` : "💾 ?";
-  const extras = info ? ` | ${info}` : "";
+  const { quality, qIcon, info, lang } = extractStreamInfo(fileTitle);
   
-  // Riga 1: [Servizio + Qualità] Fonte
-  const name = `[RD 🛡️ ${quality}] ${source}`;
+  // 1. Dimensione con icona "Pacco"
+  const sizeStr = size ? `📦 ${formatBytes(size)}` : "📦 ?";
   
-  // Riga 2 (Descrizione): Titolo file \n Dettagli tecnici \n Lingua
-  const title = `${fileTitle}\n${sizeStr}${extras}\n🔊 ${lang}`;
+  // 2. Titolo Pulito (La parte più importante!)
+  const cleanTitleDisplay = cleanFilename(fileTitle);
+  
+  // --- COSTRUZIONE DEL RISULTATO ---
+  
+  // RIGA 1 (Nome Sorgente): [RD 🛡️ ✨ 4K] Knaben
+  const name = `[RD 🌠 ${qIcon} ${quality}] ${source}`;
+  
+  // RIGA 2 (Titolo + Dettagli):
+  // Avengers: Infinity War (2018)
+  // 📦 59.8 GB • ✨ HDR DV IMAX • 🔊 Atmos • 🇮🇹 ITA
+  const detailsLine = [sizeStr, info, lang].filter(Boolean).join(" • ");
+  const title = `${cleanTitleDisplay}\n${detailsLine}`;
   
   return { name, title };
 }
