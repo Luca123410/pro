@@ -71,7 +71,24 @@ const withTimeout=(promise,ms)=>Promise.race([promise,timeoutPromise(ms)]);
 const R_NORM=/[^a-z0-9]/g;
 const normalize=str=>str.toLowerCase().replace(R_NORM,"");
 const isTitleSafe=(q,f)=>{ q=normalize(q); f=normalize(f); if(q.length<5) return f.includes(q); if(f.includes(q)) return true; const kws=q.split(/[^a-z0-9]/).filter(w=>w.length>3); const matches=kws.filter(k=>f.includes(k)); return matches.length>=Math.ceil(kws.length*0.7);}
-const isSafeForItalian=item=>{ if(item.source==="Corsaro") return true; const t=item.title.toUpperCase(); if(t.includes("ITA")||t.includes("ITALIAN")||t.includes("MULTI")) return true; if(item.source==="Brain P2P"&&!t.includes("VOSTFR")&&!t.includes("SUBSPA")) return true; return false; }
+
+// --- FILTRO ITA RIGIDO (MODIFICATO) ---
+const isSafeForItalian=item=>{ 
+  // 1. Corsaro è sempre attendibile
+  if(item.source==="Corsaro") return true; 
+
+  const t=item.title.toUpperCase(); 
+
+  // 2. REGEX STRICT: Cerca la parola intera "ITA" o "ITALIAN"
+  // \b assicura che sia una parola separata (es. "Film.ITA.mkv", "Film ITA", "Film-ITA")
+  // Questo ESCLUDE parole come "DIGITAL", "TITANIC", "CAPITAL"
+  // Questo ESCLUDE file "MULTI" che non hanno anche scritto "ITA"
+  if(/\bITA\b/.test(t) || /\bITALIAN/.test(t)) return true; 
+
+  // Se non matcha la regex sopra, SCARTA TUTTO.
+  // Nessuna eccezione per Brain P2P o altro.
+  return false; 
+}
 
 // --- QUERY BUILDER ---
 function buildSeriesQueries(meta){
