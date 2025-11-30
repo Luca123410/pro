@@ -1,5 +1,5 @@
 // Corsaro Brain - HYPER FAST EDITION
-// Versione: 28.6.0-external-boost
+// Versione: 29.0.0-INTELLIGENT-CORE
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -9,14 +9,15 @@ const Bottleneck = require("bottleneck");
 const FuzzySet = require("fuzzyset");
 
 // 🔥 IMPORTIAMO IL CONVERTITORE 🔥
+// Assicurati che il file id_converter.js esista nella stessa cartella
 const { tmdbToImdb } = require("./id_converter");
 
 // --- CONFIGURAZIONE HYPER FAST ---
 const CONFIG = {
   CINEMETA_URL: "https://v3-cinemeta.strem.io",
-  REAL_SIZE_FILTER: 80 * 1024 * 1024,
+  REAL_SIZE_FILTER: 80 * 1024 * 1024, // Filtra file < 80MB (spazzatura)
   TIMEOUT_TMDB: 1500,
-  SCRAPER_TIMEOUT: 6000, 
+  SCRAPER_TIMEOUT: 6000, // 6s totali per dare tempo ai motori (che ne usano 5.5)
   MAX_RESULTS: 40, 
   FUZZY_THRESHOLD: 0.6,
 };
@@ -29,12 +30,12 @@ const LIMITERS = {
 
 // --- MODULI SCRAPER  ---
 const SCRAPER_MODULES = [
-  require("./rd"),
-  require("./engines") 
+  require("./rd"),     // Modulo RealDebrid (cache check)
+  require("./engines") // 🔥 IL TUO NUOVO MOTORE POTENZIATO
 ];
 
 const FALLBACK_SCRAPERS = [
-  require("./external"),
+  require("./external"), // Fallback se non trova nulla
 ];
 
 // --- APP ---
@@ -64,7 +65,7 @@ function parseSize(sizeStr) {
   return val * (mult[unit] || 1);
 }
 
-// ** SMART MATCHING **
+// ** SMART MATCHING (Seconda Barriera) **
 function isTitleSafe(metaTitle, filename) {
   const clean = (str) => String(str).toLowerCase()
     .replace(/\b(dr\.|doctor|m\.d\.|md|us|uk|20\d{2})\b/g, "") 
@@ -93,7 +94,7 @@ function isTitleSafe(metaTitle, filename) {
   return false;
 }
 
-// 🔥🔥 FILTRO SEVERO 🔥🔥
+// 🔥🔥 FILTRO SEVERO (Seconda Barriera) 🔥🔥
 function isSafeForItalian(item) {
   if (!item || !item.title) return false;
   const t = item.title.toUpperCase();
@@ -105,7 +106,9 @@ function isSafeForItalian(item) {
     /\b(SUB.?ITA|SUBS.?ITA|SOTTOTITOLI.?ITA)\b/,
     /\b(VC[._-]?I|VO.?ITA|AUD.?ITA)\b/,           
     /\b(ITA.?ENG)\b/,                             
-    /ITALIAN.*(DL|Mux|WEBRip|BluRay)/i
+    /ITALIAN.*(DL|Mux|WEBRip|BluRay)/i,
+    // Aggiunti pattern extra per sicurezza
+    /\b(SPEEDVIDEO|WMS|TRIDIM|iDN_CreW)\b/
   ];
   
   return itaPatterns.some(p => p.test(t));
@@ -215,7 +218,11 @@ function buildSeriesQueries(meta) {
   const ee = String(e).padStart(2, "0");
   
   let queries = new Set();
+  
+  // Query specifica prioritaria
   queries.add(`${title} S${ss}E${ee}`);
+  
+  // Varianti
   queries.add(`${title} S${ss}`); 
 
   if (title.toLowerCase().includes("house")) {
@@ -264,7 +271,7 @@ async function getMetadata(id, type) {
       title: cData.meta.name,
       originalTitle: cData.meta.name,
       year: cData.meta.year?.split("–")[0],
-      imdb_id: tmdbId.split(":")[0], // Questo ID viene passato agli scraper
+      imdb_id: tmdbId.split(":")[0], // ID base per i metadati
       isSeries: type === "series",
       season: parseInt(s),
       episode: parseInt(e)
@@ -272,11 +279,11 @@ async function getMetadata(id, type) {
   } catch { return null; }
 }
 
-// 🔥 FUNZIONE PRINCIPALE MODIFICATA PER GESTIRE TMDB 🔥
+// 🔥 FUNZIONE PRINCIPALE MODIFICATA PER GESTIRE TMDB E SMART ENGINE 🔥
 async function generateStream(type, id, config, userConfStr) {
   if (!config.rd) return { streams: [{ name: "⚠️ CONFIG", title: "Serve RealDebrid API Key" }] };
   
-  let finalId = id; // Default: usiamo l'ID in ingresso
+  let finalId = id; // Default: usiamo l'ID in ingresso (es. tt12345:1:5 o tt12345)
   
   // 1. RILEVAMENTO TMDB (es. tmdb:12345 o tmdb:12345:1:5)
   if (id.startsWith("tmdb:")) {
@@ -292,13 +299,14 @@ async function generateStream(type, id, config, userConfStr) {
               if (type === "series" && parts.length >= 4) {
                   const s = parts[2];
                   const e = parts[3];
-                  finalId = `${imdbId}:${s}:${e}`; // Esempio: tt12345:1:5
+                  // ID COMPLETO per il motore Smart (tt12345:1:5)
+                  finalId = `${imdbId}:${s}:${e}`; 
               } else {
                   finalId = imdbId; // Esempio: tt12345
               }
               console.log(`✅ Convertito con successo: TMDB ${tmdbId} -> IMDB ${finalId}`);
           } else {
-              console.log(`⚠️ Impossibile convertire TMDB ${tmdbId}. Procedo con ID originale (rischio 0 risultati).`);
+              console.log(`⚠️ Impossibile convertire TMDB ${tmdbId}. Procedo con ID originale.`);
           }
       } catch (err) {
           console.error("❌ Errore critico durante la conversione ID:", err.message);
@@ -313,7 +321,7 @@ async function generateStream(type, id, config, userConfStr) {
   const queries = meta.isSeries ? buildSeriesQueries(meta) : buildMovieQueries(meta);
   const onlyIta = config.filters?.onlyIta !== false;
 
-  console.log(`\n🔎 CERCO: "${meta.title}" (ID: ${meta.imdb_id})`);
+  console.log(`\n🔎 CERCO: "${meta.title}" [${meta.year}] (ID: ${finalId})`);
 
   let promises = [];
   queries.forEach(q => {
@@ -321,7 +329,8 @@ async function generateStream(type, id, config, userConfStr) {
       if (scraper.searchMagnet) {
         promises.push(
           LIMITERS.scraper.schedule(() => 
-            withTimeout(scraper.searchMagnet(q, meta.year, type, meta.imdb_id), CONFIG.SCRAPER_TIMEOUT)
+            // 🔥 MODIFICA CRUCIALE: Passiamo finalId (con :s:e) al motore 🔥
+            withTimeout(scraper.searchMagnet(q, meta.year, type, finalId), CONFIG.SCRAPER_TIMEOUT)
             .catch(err => [])
           )
         );
@@ -330,29 +339,27 @@ async function generateStream(type, id, config, userConfStr) {
   });
 
   let resultsRaw = (await Promise.all(promises)).flat();
-  console.log(`📥 TOTALE GREZZI: ${resultsRaw.length}`);
+  console.log(`📥 TOTALE GREZZI DAL MOTORE: ${resultsRaw.length}`);
 
+  // Filtro "Seconda Barriera" (nel caso il motore lasci passare qualcosa di strano)
   resultsRaw = resultsRaw.filter(item => {
     if (!item?.magnet) return false;
     if (!isTitleSafe(meta.title, item.title)) return false;
     if (onlyIta && !isSafeForItalian(item)) return false;
     
-    if (meta.isSeries) {
-        const s = meta.season;
-        const regex = new RegExp(`(s0?${s}[xe]0?${meta.episode}|s0?${s}\\b|stagione ${s}\\b|season ${s}\\b|complete|pack)`, "i");
-        if (!regex.test(item.title)) return false;
-    }
+    // Per le serie, il motore fa già il lavoro sporco su S/E, 
+    // ma qui manteniamo un controllo di sicurezza sui Pack.
     return true;
   });
 
-  // 🔥 FIX ANTI-BLOCCO: EXTERNAL CON TIMEOUT GESTITO CORRETTAMENTE 🔥
+  // 🔥 FALLBACK EXTERNAL (con Timeout gestito) 🔥
   if (resultsRaw.length <= 5) {
     console.log(`⚠️ Risultati scarsi (${resultsRaw.length}). Attivo External (ID Search)...`);
     
     const extPromises = FALLBACK_SCRAPERS.map(fb => {
         return LIMITERS.scraper.schedule(async () => {
             try {
-                // Passiamo queries[0] (titolo) e finalId (ID completo)
+                // Passiamo finalId anche qui
                 return await withTimeout(fb.searchMagnet(queries[0], meta.year, type, finalId), CONFIG.SCRAPER_TIMEOUT);
             } catch (err) {
                 console.log(`❌ External Error: ${err.message}`);
@@ -363,18 +370,15 @@ async function generateStream(type, id, config, userConfStr) {
 
     try {
         let timeoutHandle;
-        
-        // Promise del Timeout che possiamo cancellare
         const timeoutPromise = new Promise(resolve => {
             timeoutHandle = setTimeout(() => {
-                console.log("⏰ External Search TEMPO SCADUTO (Skip forzato)");
+                console.log("⏰ External Search TEMPO SCADUTO");
                 resolve([]);
-            }, CONFIG.SCRAPER_TIMEOUT + 1500); // 1.5s di grazia extra
+            }, CONFIG.SCRAPER_TIMEOUT + 1500); 
         });
 
-        // Promise della Ricerca che cancella il timeout se vince
         const searchPromise = Promise.all(extPromises).then(res => {
-            clearTimeout(timeoutHandle); // 🛑 SPEGNE IL TIMER SE ABBIAMO FINITO!
+            clearTimeout(timeoutHandle);
             return res;
         });
 
@@ -388,16 +392,15 @@ async function generateStream(type, id, config, userConfStr) {
     } catch (e) {
         console.log("❌ Errore critico nel blocco External:", e.message);
     }
-  }const seen = new Set(); 
+  }
+
+  const seen = new Set(); 
   let cleanResults = [];
   
-  // 🔥 FIX CRASH DEFINITIVO: Filtra risultati corrotti 🔥
+  // Pulizia finale duplicati
   for (const item of resultsRaw) {
-    // Controllo di sicurezza: se l'item è nullo o non ha il magnet, SALTA
     if (!item || !item.magnet) continue;
-
     try {
-        // Safe match
         const hashMatch = item.magnet.match(/btih:([a-f0-9]{40})/i);
         const hash = hashMatch ? hashMatch[1].toUpperCase() : item.magnet;
         
@@ -406,10 +409,7 @@ async function generateStream(type, id, config, userConfStr) {
         
         item._size = parseSize(item.size || item.sizeBytes);
         cleanResults.push(item);
-    } catch (err) {
-        // Se succede qualcosa di strano con un singolo file, lo ignoriamo e andiamo avanti
-        continue;
-    }
+    } catch (err) { continue; }
   }
   if (!cleanResults.length) return { streams: [{ name: "⛔", title: "Nessun risultato trovato" }] };
 
@@ -434,6 +434,7 @@ function rankAndFilterResults(results, meta) {
     
     if (item.source === "Corsaro") score += 1000;
 
+    // Bonus per match esatto episodio (se il motore lo ha trovato)
     if (meta.isSeries && new RegExp(`S${String(meta.season).padStart(2,'0')}E${String(meta.episode).padStart(2,'0')}`, "i").test(item.title)) score += 1500;
     
     if (/cam|ts/i.test(item.title)) score -= 10000;
@@ -456,7 +457,7 @@ async function resolveRdLinkOptimized(rdKey, item, showFake) {
 
 // --- ROUTES ---
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
-app.get("/:conf/manifest.json", (req, res) => { const m = { id: "org.corsaro.brain.v28.6", version: "28.6.0", name: "Corsaro Brain (External Boost)", resources: ["catalog", "stream"], types: ["movie", "series"], catalogs: [] }; m.behaviorHints = { configurable: true, configurationRequired: false }; res.setHeader("Access-Control-Allow-Origin", "*"); res.json(m); });
+app.get("/:conf/manifest.json", (req, res) => { const m = { id: "org.corsaro.brain.v29.0", version: "29.0.0", name: "Corsaro Brain (Smart Core)", resources: ["catalog", "stream"], types: ["movie", "series"], catalogs: [] }; m.behaviorHints = { configurable: true, configurationRequired: false }; res.setHeader("Access-Control-Allow-Origin", "*"); res.json(m); });
 app.get("/:conf/catalog/:type/:id/:extra?.json", async (req, res) => { res.setHeader("Access-Control-Allow-Origin", "*"); res.json({metas:[]}); });
 app.get("/:conf/stream/:type/:id.json", async (req, res) => { const result = await generateStream(req.params.type, req.params.id.replace(".json", ""), getConfig(req.params.conf), req.params.conf); res.setHeader("Access-Control-Allow-Origin", "*"); res.json(result); });
 
@@ -464,4 +465,4 @@ function getConfig(configStr) { try { return JSON.parse(Buffer.from(configStr, "
 function withTimeout(promise, ms) { return Promise.race([promise, new Promise(r => setTimeout(() => r([]), ms))]); }
 
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`🚀 Corsaro Brain v28.6.0 (External Boost) su porta ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Corsaro Brain v29.0.0 (Smart Core) su porta ${PORT}`));
