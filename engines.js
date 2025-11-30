@@ -2,8 +2,8 @@ const axios = require("axios");
 const cheerio = require("cheerio");
 const https = require("https");
 
-// --- CONFIGURAZIONE GLOBALE ULTERIORMENTE OTTIMIZZATA ---
-const TIMEOUT = 5500; // Ridotto a 5.5s: Fast fail
+// --- CONFIGURAZIONE ---
+const TIMEOUT = 5500; // 5.5s timeout per non bloccare troppo
 const TRACKERS = [
     "udp://tracker.opentrackr.org:1337/announce",
     "udp://open.demonii.com:1337/announce",
@@ -20,7 +20,8 @@ const COMMON_HEADERS = {
     'Referer': 'https://www.google.com/'
 };
 
-// --- HELPER (NON MODIFICATO) ---
+// --- HELPER DI PARSING ---
+
 function clean(title) {
     return title.replace(/[:"'’]/g, "").replace(/[^a-zA-Z0-9\s\-.\[\]]/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -28,26 +29,89 @@ function clean(title) {
 function isItalianResult(name) {
     const nameUpper = name.toUpperCase();
     if (/\b(ENG|ENGLISH)\b/i.test(nameUpper) && !/\b(ITA|MULTI|DUAL)\b/i.test(nameUpper)) return false;
-    const regex = /\b(ITA|ITALIAN|ITALIANO|MULTI|DUAL|MD|SUB.?ITA|SUBITA|SUB-ITA|ITALUB|FORCED|AC3.?ITA|DTS.?ITA|AUDIO.?ITA|ITA.?AC3|ITA.?HD|BDMUX|DVDRIP.?ITA|CiNEFiLE|NovaRip|MeM|robbyrs|iDN_CreW)\b/i;
+    // Regex estesa per catturare tutti i tag italiani
+    const regex = /\b(ITA|ITALIAN|ITALIANO|MULTI|DUAL|MD|SUB.?ITA|SUBITA|SUB-ITA|ITALUB|FORCED|AC3.?ITA|DTS.?ITA|AUDIO.?ITA|ITA.?AC3|ITA.?HD|BDMUX|DVDRIP.?ITA|CiNEFiLE|NovaRip|MeM|robbyrs|iDN_CreW|SPEEDVIDEO|WMS|TRIDIM)\b/i;
     return regex.test(nameUpper);
 }
 
-function checkYear(name, year) {
+function checkYear(name, year, type) {
     if (!year) return true;
+    if (type === 'tv' || type === 'series') return true; // Per le serie l'anno è meno importante
     const y = parseInt(year);
     return [y - 1, y, y + 1].some(ay => name.includes(ay.toString()));
 }
 
-function isCorrectFormat(name, type, title) {
-    if (type !== 'tv') return true;
+// Estrae S e E dall'ID di Stremio (tt12345:3:6)
+function parseImdbId(imdbId) {
+    if (!imdbId || !imdbId.includes(':')) return { season: null, episode: null };
+    const parts = imdbId.split(':');
+    // Prende sempre gli ultimi due segmenti come Stagione ed Episodio
+    if (parts.length >= 3) {
+        return { season: parseInt(parts[parts.length - 2]), episode: parseInt(parts[parts.length - 1]) };
+    }
+    return { season: null, episode: null };
+}
+
+// Helper per estrarre numeri dal nome file (VERSIONE MIGLIORATA)
+function extractInfo(name) {
+    const upper = name.toUpperCase();
+    let season = null;
+    let episode = null;
+
+    // 1. Cerca formato standard S01E01 / S1E1
+    const standardMatch = upper.match(/S(\d{1,2})[._\s-]*E(\d{1,3})/);
+    if (standardMatch) {
+        season = parseInt(standardMatch[1]);
+        episode = parseInt(standardMatch[2]);
+    } else {
+        // 2. Cerca formato 1x01 / 1X01
+        const xMatch = upper.match(/(\d{1,2})X(\d{1,3})/);
+        if (xMatch) {
+            season = parseInt(xMatch[1]);
+            episode = parseInt(xMatch[2]);
+        } else {
+            // 3. Cerca "Stagione X" o "Season X"
+            const sMatch = upper.match(/(?:STAGIONE|SEASON|S)\s?(\d{1,2})(?![0-9])/);
+            if (sMatch) season = parseInt(sMatch[1]);
+
+            // 4. Cerca "Episodio X" o "Ep. X"
+            const eMatch = upper.match(/(?:EPISODIO|EP\.|_|\s)(\d{1,3})(?!\d|p|k|bit|mb|gb)/);
+            if (eMatch) episode = parseInt(eMatch[1]);
+        }
+    }
+    return { season, episode };
+}
+
+// LOGICA FILTRO PERFETTO (Strict Mode)
+function isCorrectFormat(name, reqSeason, reqEpisode) {
+    // Se non ci sono requisiti (es. Film), passa tutto
+    if (!reqSeason && !reqEpisode) return true;
+
+    const info = extractInfo(name);
     const upperName = name.toUpperCase();
-    const upperTitle = title.toUpperCase();
-    const seasonRegex = /S(\d{1,2})/g;
-    const episodeRegex = /E(\d{1,2})/g;
-    const seasons = upperTitle.match(seasonRegex) || [];
-    const episodes = upperTitle.match(episodeRegex) || [];
-    if (seasons.length > 0 && !seasons.some(s => upperName.includes(s))) return false;
-    if (episodes.length > 0 && !episodes.some(e => upperName.includes(e))) return false;
+    
+    // Rileva Pack
+    const isPack = upperName.includes("COMPLET") || upperName.includes("PACK") || upperName.includes("TUTTE") || upperName.includes("STAGIONE") || upperName.includes("SEASON");
+
+    // 1. Controllo STAGIONE
+    if (reqSeason) {
+        // Se il file ha una stagione specifica e non coincide -> SCARTA
+        if (info.season !== null && info.season !== reqSeason) return false;
+    }
+
+    // 2. Controllo EPISODIO
+    if (reqEpisode) {
+        // Se trovo un episodio specifico nel nome file (es. E01)
+        if (info.episode !== null) {
+            // Se è diverso da quello richiesto -> SCARTA (Risolve il problema 2x01 vs 2x05)
+            if (info.episode !== reqEpisode) return false;
+        } else {
+            // Se NON trovo l'episodio nel nome del file:
+            // Accetto SOLO se è un Pack completo che corrisponde alla stagione (o non ha stagione specificata)
+            if (!isPack) return false; 
+        }
+    }
+
     return true;
 }
 
@@ -68,9 +132,9 @@ function bytesToSize(bytes) {
     return (bytes / 1073741824).toFixed(2) + " GB";
 }
 
-// --- MOTORI DI RICERCA AGGIORNATI (Timeout di dettaglio ridotto a 3000ms) ---
+// --- MOTORI DI RICERCA (Adattati per ricevere reqSeason/reqEpisode) ---
 
-async function searchCorsaro(title, year, type) {
+async function searchCorsaro(title, year, type, reqSeason, reqEpisode) {
     try {
         const url = `https://ilcorsaronero.link/search?q=${encodeURIComponent(clean(title))}`;
         const { data } = await axios.get(url, { headers: COMMON_HEADERS, httpsAgent, timeout: TIMEOUT });
@@ -81,7 +145,7 @@ async function searchCorsaro(title, year, type) {
             if (items.length >= 20) return;
             const href = $(elem).attr('href');
             const text = $(elem).text().trim();
-            if (!isItalianResult(text) || !checkYear(text, year) || !isCorrectFormat(text, type, title)) return;
+            if (!isItalianResult(text) || !checkYear(text, year, type) || !isCorrectFormat(text, reqSeason, reqEpisode)) return;
             if (href && (href.includes('/torrent/') || href.includes('details.php')) && text.length > 5) {
                 let fullUrl = href.startsWith('http') ? href : `https://ilcorsaronero.link${href.startsWith('/') ? '' : '/'}${href}`;
                 if (!items.some(p => p.url === fullUrl)) items.push({ url: fullUrl, title: text });
@@ -89,7 +153,7 @@ async function searchCorsaro(title, year, type) {
         });
         const promises = items.map(async (item) => {
             try {
-                const detailPage = await axios.get(item.url, { headers: COMMON_HEADERS, httpsAgent, timeout: 3000 }); // Ultra fast detail
+                const detailPage = await axios.get(item.url, { headers: COMMON_HEADERS, httpsAgent, timeout: 3000 });
                 const magnetMatch = detailPage.data.match(/magnet:\?xt=urn:btih:([a-zA-Z0-9]{40})/i);
                 if (!magnetMatch) return null;
                 const sizeMatch = detailPage.data.match(/(\d+(\.\d+)?)\s?(GB|MB|KB)/i);
@@ -108,7 +172,7 @@ async function searchCorsaro(title, year, type) {
     } catch { return []; }
 }
 
-async function searchKnaben(title, year, type) {
+async function searchKnaben(title, year, type, reqSeason, reqEpisode) {
     try {
         const url = `https://knaben.org/search/${encodeURIComponent(clean(title))}/0/1/seeders`;
         const { data } = await axios.get(url, { headers: COMMON_HEADERS, httpsAgent, timeout: TIMEOUT });
@@ -121,7 +185,7 @@ async function searchKnaben(title, year, type) {
             const magnet = $(row).find('a[href^="magnet:"]').attr('href');
             const sizeStr = tds.eq(2).text().trim();
             const seeders = parseInt(tds.eq(4).text().trim()) || 0;
-            if (name && magnet && isItalianResult(name) && checkYear(name, year) && isCorrectFormat(name, type, title)) {
+            if (name && magnet && isItalianResult(name) && checkYear(name, year, type) && isCorrectFormat(name, reqSeason, reqEpisode)) {
                 results.push({ title: name, magnet, size: sizeStr, sizeBytes: parseSize(sizeStr), seeders, source: "Knaben" });
             }
         });
@@ -129,7 +193,7 @@ async function searchKnaben(title, year, type) {
     } catch { return []; }
 }
 
-async function searchUindex(title, year, type) {
+async function searchUindex(title, year, type, reqSeason, reqEpisode) {
     try {
         const url = `https://uindex.org/search.php?search=${encodeURIComponent(clean(title) + " ITA")}&c=0`;
         const { data } = await axios.get(url, { headers: COMMON_HEADERS, httpsAgent, timeout: TIMEOUT, validateStatus: s => s < 500 });
@@ -145,7 +209,7 @@ async function searchUindex(title, year, type) {
                 while ((m = regex.exec(row)) !== null) cells.push(m[1].trim());
                 if (cells.length < 3) continue;
                 const name = cells[1].match(/>([^<]+)<\/a>/)?.[1].trim();
-                if (name && isItalianResult(name) && checkYear(name, year) && isCorrectFormat(name, type, title)) {
+                if (name && isItalianResult(name) && checkYear(name, year, type) && isCorrectFormat(name, reqSeason, reqEpisode)) {
                     const sizeStr = cells[2].match(/([\d.,]+\s*(?:B|KB|MB|GB|TB))/i)?.[1].trim() || "??";
                     const seeders = parseInt(cells[4]?.match(/(\d+)/)?.[1] || 0);
                     results.push({ title: name, magnet, size: sizeStr, sizeBytes: parseSize(sizeStr), seeders, source: "UIndex" });
@@ -156,7 +220,7 @@ async function searchUindex(title, year, type) {
     } catch { return []; }
 }
 
-async function searchNyaa(title, year, type) {
+async function searchNyaa(title, year, type, reqSeason, reqEpisode) {
     try {
         let q = clean(title);
         if (!q.toLowerCase().includes("ita")) q += " ita";
@@ -171,7 +235,7 @@ async function searchNyaa(title, year, type) {
             const magnet = $(tds.eq(2)).find('a[href^="magnet:"]').attr("href");
             const sizeStr = $(tds.eq(3)).text().trim();
             const seeders = parseInt($(tds.eq(5)).text().trim(), 10);
-            if (name && magnet && seeders > 0 && isItalianResult(name) && checkYear(name, year) && isCorrectFormat(name, type, title)) {
+            if (name && magnet && seeders > 0 && isItalianResult(name) && checkYear(name, year, type) && isCorrectFormat(name, reqSeason, reqEpisode)) {
                 results.push({ title: name, magnet, size: sizeStr, sizeBytes: parseSize(sizeStr), seeders, source: "Nyaa" });
             }
         });
@@ -179,24 +243,28 @@ async function searchNyaa(title, year, type) {
     } catch { return []; }
 }
 
-async function searchTPB(title, year, type) {
+async function searchTPB(title, year, type, reqSeason, reqEpisode) {
     try {
-        const q = `${clean(title)} ${year || ""} ITA`;
-        const { data } = await axios.get("https://apibay.org/q.php", { params: { q, cat: type === 'tv' ? 205 : 201 }, timeout: TIMEOUT }).catch(() => ({ data: [] }));
+        const q = `${clean(title)} ${type === 'tv' ? '' : (year || "")} ITA`;
+        const { data } = await axios.get("https://apibay.org/q.php", { params: { q, cat: type === 'tv' ? 0 : 201 }, timeout: TIMEOUT }).catch(() => ({ data: [] }));
         if (!Array.isArray(data) || data[0]?.name === "No results returned") return [];
-        return data.filter(i => i.info_hash !== "0000000000000000000000000000000000000000" && isItalianResult(i.name) && checkYear(i.name, year) && isCorrectFormat(i.name, type, title))
-            .map(i => ({
-                title: i.name,
-                magnet: `magnet:?xt=urn:btih:${i.info_hash}&dn=${encodeURIComponent(i.name)}`,
-                size: bytesToSize(i.size),
-                sizeBytes: parseInt(i.size),
-                seeders: parseInt(i.seeders),
-                source: "TPB"
-            }));
+        return data.filter(i => 
+            i.info_hash !== "0000000000000000000000000000000000000000" && 
+            isItalianResult(i.name) && 
+            checkYear(i.name, year, type) && 
+            isCorrectFormat(i.name, reqSeason, reqEpisode)
+        ).map(i => ({
+            title: i.name,
+            magnet: `magnet:?xt=urn:btih:${i.info_hash}&dn=${encodeURIComponent(i.name)}`,
+            size: bytesToSize(i.size),
+            sizeBytes: parseInt(i.size),
+            seeders: parseInt(i.seeders),
+            source: "TPB"
+        }));
     } catch { return []; }
 }
 
-async function search1337x(title, year, type) {
+async function search1337x(title, year, type, reqSeason, reqEpisode) {
     try {
         const url = `https://1337x.to/search/${encodeURIComponent(clean(title) + " ITA")}/1/`;
         const { data } = await axios.get(url, { timeout: TIMEOUT, headers: COMMON_HEADERS, httpsAgent });
@@ -206,11 +274,13 @@ async function search1337x(title, year, type) {
             const name = $(row).find("td.name a").last().text().trim();
             const link = $(row).find("td.name a").last().attr("href");
             const seeders = parseInt($(row).find("td.seeds").text().replace(/,/g, "")) || 0;
-            if (name && link && isItalianResult(name) && checkYear(name, year) && isCorrectFormat(name, type, title)) candidates.push({ name, link: `https://1337x.to${link}`, seeders });
+            if (name && link && isItalianResult(name) && checkYear(name, year, type) && isCorrectFormat(name, reqSeason, reqEpisode)) {
+                candidates.push({ name, link: `https://1337x.to${link}`, seeders });
+            }
         });
         const promises = candidates.map(async (cand) => {
             try {
-                const { data } = await axios.get(cand.link, { timeout: 3000, headers: COMMON_HEADERS, httpsAgent }); // Ultra fast detail
+                const { data } = await axios.get(cand.link, { timeout: 3000, headers: COMMON_HEADERS, httpsAgent });
                 const $d = cheerio.load(data);
                 const magnet = $d("a[href^='magnet:?']").first().attr("href");
                 const sizeStr = $d("ul.list li").filter((i, el) => $(el).text().includes("Size")).text().replace(/.*Size:\s*/,'').trim();
@@ -221,7 +291,7 @@ async function search1337x(title, year, type) {
     } catch { return []; }
 }
 
-async function searchTorrentGalaxy(title, year, type) {
+async function searchTorrentGalaxy(title, year, type, reqSeason, reqEpisode) {
     try {
         const url = `https://torrentgalaxy.to/torrents.php?search=${encodeURIComponent(clean(title) + " ITA")}&sort=seeders&order=desc`;
         const { data } = await axios.get(url, { timeout: TIMEOUT, headers: COMMON_HEADERS, httpsAgent });
@@ -233,7 +303,7 @@ async function searchTorrentGalaxy(title, year, type) {
             const sizeStr = $(row).find('div td div span font').first().text().trim();
             const seedersStr = $(row).find('div td span font[color="green"]').text().trim();
             const seeders = parseInt(seedersStr) || 0;
-            if (name && magnet && isItalianResult(name) && checkYear(name, year) && isCorrectFormat(name, type, title)) {
+            if (name && magnet && isItalianResult(name) && checkYear(name, year, type) && isCorrectFormat(name, reqSeason, reqEpisode)) {
                 results.push({ title: name, magnet, size: sizeStr, sizeBytes: parseSize(sizeStr), seeders, source: "TorrentGalaxy" });
             }
         });
@@ -241,7 +311,7 @@ async function searchTorrentGalaxy(title, year, type) {
     } catch { return []; }
 }
 
-async function searchBitSearch(title, year, type) {
+async function searchBitSearch(title, year, type, reqSeason, reqEpisode) {
     try {
         const url = `https://bitsearch.to/search?q=${encodeURIComponent(clean(title) + " ITA")}`;
         const { data } = await axios.get(url, { timeout: TIMEOUT, headers: COMMON_HEADERS, httpsAgent }).catch(() => ({ data: "" }));
@@ -252,7 +322,7 @@ async function searchBitSearch(title, year, type) {
             const magnet = $(el).find("a.dl-magnet").attr("href");
             const seeders = parseInt($(el).find(".stats div").first().text().replace(/,/g, "")) || 0;
             const sizeStr = $(el).find(".stats div").eq(1).text();
-            if (name && magnet && isItalianResult(name) && checkYear(name, year) && isCorrectFormat(name, type, title)) {
+            if (name && magnet && isItalianResult(name) && checkYear(name, year, type) && isCorrectFormat(name, reqSeason, reqEpisode)) {
                 results.push({ title: name, magnet, seeders, size: sizeStr, sizeBytes: parseSize(sizeStr), source: "BitSearch" });
             }
         });
@@ -260,7 +330,7 @@ async function searchBitSearch(title, year, type) {
     } catch { return []; }
 }
 
-async function searchLime(title, year, type) {
+async function searchLime(title, year, type, reqSeason, reqEpisode) {
     try {
         const url = `https://limetorrents.info/search/all/${encodeURIComponent(clean(title) + " ITA")}/seeds/1/`;
         const { data } = await axios.get(url, { timeout: TIMEOUT, headers: COMMON_HEADERS, httpsAgent }).catch(() => ({ data: "" }));
@@ -274,13 +344,13 @@ async function searchLime(title, year, type) {
             const link = nameLink.attr("href");
             const seeders = parseInt(tds.eq(3).text().replace(/,/g, "")) || 0;
             const sizeStr = tds.eq(2).text();
-            if (name && link && isItalianResult(name) && checkYear(name, year) && isCorrectFormat(name, type, title)) {
+            if (name && link && isItalianResult(name) && checkYear(name, year, type) && isCorrectFormat(name, reqSeason, reqEpisode)) {
                 candidates.push({ name, link: `https://limetorrents.info${link}`, seeders, sizeStr });
             }
         });
         const promises = candidates.slice(0, 5).map(async (cand) => {
             try {
-                const { data } = await axios.get(cand.link, { timeout: 3000, headers: COMMON_HEADERS, httpsAgent }); // Ultra fast detail
+                const { data } = await axios.get(cand.link, { timeout: 3000, headers: COMMON_HEADERS, httpsAgent }); 
                 const magnet = cheerio.load(data)("a[href^='magnet:?']").first().attr("href");
                 return magnet ? { title: cand.name, magnet, seeders: cand.seeders, size: cand.sizeStr, sizeBytes: parseSize(cand.sizeStr), source: "Lime" } : null;
             } catch { return null; }
@@ -289,7 +359,7 @@ async function searchLime(title, year, type) {
     } catch { return []; }
 }
 
-async function searchGlo(title, year, type) {
+async function searchGlo(title, year, type, reqSeason, reqEpisode) {
     try {
         let q = clean(title);
         if (!q.toLowerCase().includes("ita")) q += " ITA";
@@ -303,13 +373,13 @@ async function searchGlo(title, year, type) {
             const detailLink = nameA.parent().attr('href');
             const sizeStr = $(el).find('td').eq(4).text().trim();
             const seeders = parseInt($(el).find('td').eq(5).text().trim()) || 0;
-            if (name && detailLink && isItalianResult(name) && checkYear(name, year) && isCorrectFormat(name, type, title)) {
+            if (name && detailLink && isItalianResult(name) && checkYear(name, year, type) && isCorrectFormat(name, reqSeason, reqEpisode)) {
                 candidates.push({ name, detailLink: `https://glotorrents.com/${detailLink}`, sizeStr, seeders });
             }
         });
         const promises = candidates.slice(0, 5).map(async (cand) => {
             try {
-                const { data } = await axios.get(cand.detailLink, { headers: COMMON_HEADERS, httpsAgent, timeout: 3000 }); // Ultra fast detail
+                const { data } = await axios.get(cand.detailLink, { headers: COMMON_HEADERS, httpsAgent, timeout: 3000 });
                 const magnet = cheerio.load(data)('a[href^="magnet:"]').attr('href');
                 if (magnet) {
                     return { title: cand.name, magnet, size: cand.sizeStr, sizeBytes: parseSize(cand.sizeStr), seeders: cand.seeders, source: "Glo" };
@@ -321,21 +391,23 @@ async function searchGlo(title, year, type) {
     } catch { return []; }
 }
 
-// --- MAIN AGGREGATOR (NON MODIFICATO) ---
+// --- MAIN AGGREGATOR ---
 async function searchMagnet(title, year, type, imdbId) {
-    console.log(`\n🚀 [HYPER FAST ENGINE] Ricerca: "${title}" [${year || "N/A"}]`);
+    // Estrazione parametri critici
+    const { season: reqSeason, episode: reqEpisode } = parseImdbId(imdbId);
     
+    // Passiamo reqSeason/reqEpisode a TUTTI i motori
     const promises = [
-        searchCorsaro(title, year, type),
-        searchTPB(title, year, type),
-        search1337x(title, year, type),
-        searchBitSearch(title, year, type),
-        searchTorrentGalaxy(title, year, type),
-        searchNyaa(title, year, type),
-        searchLime(title, year, type),
-        searchGlo(title, year, type),
-        searchKnaben(title, year, type),
-        searchUindex(title, year, type)
+        searchCorsaro(title, year, type, reqSeason, reqEpisode),
+        searchTPB(title, year, type, reqSeason, reqEpisode),
+        search1337x(title, year, type, reqSeason, reqEpisode),
+        searchBitSearch(title, year, type, reqSeason, reqEpisode),
+        searchTorrentGalaxy(title, year, type, reqSeason, reqEpisode),
+        searchNyaa(title, year, type, reqSeason, reqEpisode),
+        searchLime(title, year, type, reqSeason, reqEpisode),
+        searchGlo(title, year, type, reqSeason, reqEpisode),
+        searchKnaben(title, year, type, reqSeason, reqEpisode),
+        searchUindex(title, year, type, reqSeason, reqEpisode)
     ];
     
     const resultsArrays = await Promise.allSettled(promises);
@@ -345,14 +417,17 @@ async function searchMagnet(title, year, type, imdbId) {
         .map(r => r.value)
         .flat();
     
+    // Sort by seeders
     const topResults = allResults.sort((a, b) => (b.seeders || 0) - (a.seeders || 0)).slice(0, 50);
 
+    // Add trackers
     topResults.forEach(r => {
         if (r.magnet && !r.magnet.includes("&tr=")) {
             TRACKERS.forEach(tr => r.magnet += `&tr=${encodeURIComponent(tr)}`);
         }
     });
     
+    // Deduplication
     const seenHashes = new Set();
     const finalResults = topResults.filter(r => {
         const hashMatch = r.magnet.match(/btih:([a-f0-9]{40})/i);
@@ -362,7 +437,6 @@ async function searchMagnet(title, year, type, imdbId) {
         return true;
     });
     
-    console.log(`✅ [HYPER FAST ENGINE] Trovati: ${finalResults.length}`);
     return finalResults;
 }
 
