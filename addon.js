@@ -157,16 +157,50 @@ function extractStreamInfo(title, source) {
   return { quality: q, qIcon, info: detailsParts.join(" • "), lang };
 }
 
-function formatStreamTitleCinePro(fileTitle, source, size) {
-  const { quality, qIcon, info, lang } = extractStreamInfo(fileTitle, source);
-  const sizeStr = size ? `💾 ${formatBytes(size)}` : "💾 ?";
-  let cleanName = cleanFilename(fileTitle).replace(/s\d+e\d+/yi, "").replace(/s\d+/yi, "").trim();
-  const epTag = getEpisodeTag(fileTitle);
-  const name = `[RD 🌠 ${qIcon} ${quality}] ${source}`;
-  const titleLine = epTag ? `${cleanName} • ${epTag}` : cleanName;
-  const detailsLine = [sizeStr, info, lang].filter(Boolean).join(" • ");
-  return { name, title: `${titleLine}\n${detailsLine}` };
+function formatStreamTitleCinePro(fileTitle, source, size, seeders) {
+    const { quality, qIcon, info, lang } = extractStreamInfo(fileTitle, source);
+
+    const sizeStr = size ? `📦 ${formatBytes(size)}` : "📦 ❓"; 
+    const seedersStr = seeders ? `👤 ${seeders}` : "";
+
+    // --- 1. COSTRUISCI IL CAMPO 'NAME' ---
+    const name = `[RD ${qIcon} ${quality}] ${source}`;
+
+    // --- 2. PREPARA IL CAMPO 'TITLE' ---
+    const detailLines = [];
+
+    // Riga 1: Titolo pulito + episodio
+    let cleanName = cleanFilename(fileTitle)
+        .replace(/s\d+e\d+/i, "")
+        .replace(/s\d+/i, "")
+        .trim();
+    const epTag = getEpisodeTag(fileTitle);
+    detailLines.push(`🎬 ${cleanName}${epTag ? ` ${epTag}` : ""} • ${quality}`);
+
+    // Riga 2: Dimensione e seeders su una sola linea, compatta
+    let sizeSeedLine = sizeStr;
+    if (seedersStr) sizeSeedLine += ` • ${seedersStr}`;
+    detailLines.push(sizeSeedLine);
+
+    // Riga 3: Fonte + lingua
+    const langTag = lang.replace('🌐', '').replace('🇮🇹', 'IT').replace('🇬🇧', 'GB').trim();
+    detailLines.push(`🔍 ${source} • 🗣️ ${langTag}`);
+
+    // Riga 4: Codec / Audio info (più elegante)
+    if (info) {
+        const tags = info.split(' • ');
+        const videoTags = tags.filter(t => t.includes('✨')).map(t => t.replace('✨', ''));
+        const audioTags = tags.filter(t => t.includes('🔊'));
+        if (videoTags.length) detailLines.push(`🎞️ ${videoTags.join(' • ')}`);
+        if (audioTags.length) detailLines.push(`🔊 ${audioTags.join(' • ')}`);
+    }
+
+    // --- 3. Combina tutto in TITLE con linee separate ma leggibili ---
+    const fullTitle = detailLines.join('\n');
+
+    return { name, title: fullTitle };
 }
+
 
 function buildSeriesQueries(meta) {
   const { title, originalTitle: orig, season: s, episode: e } = meta;
