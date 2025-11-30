@@ -1,5 +1,5 @@
 // Corsaro Brain - HYPER FAST EDITION
-// Versione: 28.4.0-hyperspeed
+// Versione: 28.5.0-tmdb-support
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -8,20 +8,23 @@ const axios = require("axios");
 const Bottleneck = require("bottleneck");
 const FuzzySet = require("fuzzyset");
 
+// 🔥 IMPORTIAMO IL CONVERTITORE 🔥
+const { tmdbToImdb } = require("./id_converter");
+
 // --- CONFIGURAZIONE HYPER FAST ---
 const CONFIG = {
   CINEMETA_URL: "https://v3-cinemeta.strem.io",
   REAL_SIZE_FILTER: 80 * 1024 * 1024,
   TIMEOUT_TMDB: 1500,
-  SCRAPER_TIMEOUT: 6000, // Ridotto a 6s: tempo massimo totale di attesa per gli scraper
-  MAX_RESULTS: 40, // Aumentato a 40: ottimo equilibrio tra velocità e numero di risultati
+  SCRAPER_TIMEOUT: 6000, 
+  MAX_RESULTS: 40, 
   FUZZY_THRESHOLD: 0.6,
 };
 
 // --- LIMITERS ESTREMI ---
 const LIMITERS = {
-  scraper: new Bottleneck({ maxConcurrent: 40, minTime: 10 }), // Massima aggressività sugli scraper
-  rd: new Bottleneck({ maxConcurrent: 25, minTime: 40 }), // Massima aggressività su RD (25 richieste concorrenti)
+  scraper: new Bottleneck({ maxConcurrent: 40, minTime: 10 }), 
+  rd: new Bottleneck({ maxConcurrent: 25, minTime: 40 }), 
 };
 
 // --- MODULI SCRAPER  ---
@@ -34,7 +37,7 @@ const FALLBACK_SCRAPERS = [
   require("./external"),
 ];
 
-// --- APP (NON MODIFICATO) ---
+// --- APP ---
 const app = express();
 app.use(helmet({
   contentSecurityPolicy: false, 
@@ -90,26 +93,25 @@ function isTitleSafe(metaTitle, filename) {
   return false;
 }
 
-// 🔥🔥 FILTRO SEVERO (AGGIORNATO) 🔥🔥
+// 🔥🔥 FILTRO SEVERO 🔥🔥
 function isSafeForItalian(item) {
   if (!item || !item.title) return false;
   const t = item.title.toUpperCase();
   
-  // Cattura TUTTI i formati italiani moderni
   const itaPatterns = [
     /\b(ITA|ITALIAN|IT|ITL|ITALY)\b/,
     /\b(MULTI|MUII|MUL|MULTILANGUAGE)\b.*\b(ITA|IT|ITALIAN)\b/,
     /\b(AC3|DTS).*\b(ITA|IT|ITALIAN)\b/, 
     /\b(SUB.?ITA|SUBS.?ITA|SOTTOTITOLI.?ITA)\b/,
-    /\b(VC[._-]?I|VO.?ITA|AUD.?ITA)\b/,           // Audio italiano forzato
-    /\b(ITA.?ENG)\b/,                             // Ita come prima lingua
+    /\b(VC[._-]?I|VO.?ITA|AUD.?ITA)\b/,           
+    /\b(ITA.?ENG)\b/,                             
     /ITALIAN.*(DL|Mux|WEBRip|BluRay)/i
   ];
   
   return itaPatterns.some(p => p.test(t));
 }
 
-// --- VISUALS (NON MODIFICATO) ---
+// --- VISUALS ---
 function cleanFilename(filename) {
   if (!filename) return "";
   const yearMatch = filename.match(/(19|20)\d{2}/);
@@ -174,17 +176,12 @@ function extractStreamInfo(title, source) {
 
 function formatStreamTitleCinePro(fileTitle, source, size, seeders) {
     const { quality, qIcon, info, lang } = extractStreamInfo(fileTitle, source);
-
     const sizeStr = size ? `📦 ${formatBytes(size)}` : "📦 ❓"; 
     const seedersStr = seeders ? `👤 ${seeders}` : "";
 
-    // --- 1. COSTRUISCI IL CAMPO 'NAME' ---
     const name = `[RD ${qIcon} ${quality}] ${source}`;
-
-    // --- 2. PREPARA IL CAMPO 'TITLE' ---
     const detailLines = [];
 
-    // Riga 1: Titolo pulito + episodio
     let cleanName = cleanFilename(fileTitle)
         .replace(/s\d+e\d+/i, "")
         .replace(/s\d+/i, "")
@@ -192,16 +189,13 @@ function formatStreamTitleCinePro(fileTitle, source, size, seeders) {
     const epTag = getEpisodeTag(fileTitle);
     detailLines.push(`🎬 ${cleanName}${epTag ? ` ${epTag}` : ""} • ${quality}`);
 
-    // Riga 2: Dimensione e seeders su una sola linea, compatta
     let sizeSeedLine = sizeStr;
     if (seedersStr) sizeSeedLine += ` • ${seedersStr}`;
     detailLines.push(sizeSeedLine);
 
-    // Riga 3: Fonte + lingua
     const langTag = lang.replace('🌐', '').replace('🇮🇹', 'IT').replace('🇬🇧', 'GB').trim();
     detailLines.push(`🔍 ${source} • 🗣️ ${langTag}`);
 
-    // Riga 4: Codec / Audio info (più elegante)
     if (info) {
         const tags = info.split(' • ');
         const videoTags = tags.filter(t => t.includes('✨')).map(t => t.replace('✨', ''));
@@ -210,9 +204,7 @@ function formatStreamTitleCinePro(fileTitle, source, size, seeders) {
         if (audioTags.length) detailLines.push(`🔊 ${audioTags.join(' • ')}`);
     }
 
-    // --- 3. Combina tutto in TITLE con linee separate ma leggibili ---
     const fullTitle = detailLines.join('\n');
-
     return { name, title: fullTitle };
 }
 
@@ -223,25 +215,21 @@ function buildSeriesQueries(meta) {
   const ee = String(e).padStart(2, "0");
   
   let queries = new Set();
-  // Query Standard
   queries.add(`${title} S${ss}E${ee}`);
   queries.add(`${title} S${ss}`); 
 
-  // Query Dr House Fix
   if (title.toLowerCase().includes("house")) {
       queries.add(`Dr House S${ss}E${ee}`);
       queries.add(`Dr House S${ss}`);
       queries.add(`House MD S${ss}E${ee}`);
   }
 
-  // Query Original Title Standard
   if (orig && orig !== title) {
     queries.add(`${orig} S${ss}E${ee}`);
     queries.add(`${orig} S${ss}`);
   }
   queries.add(`${title} ${s}x${ee}`);
 
-  // --- BOOST PACK STAGIONE ---
   queries.add(`${title} Stagione ${s} ITA`);
   queries.add(`${title} Stagione ${s} COMPLETE`);
   queries.add(`${title} Stagione ${s} PACK`);
@@ -262,18 +250,21 @@ function buildMovieQueries(meta) {
   return q.filter(Boolean);
 }
 
+// Questa funzione ora si aspetta quasi sempre un ID IMDb valido
 async function getMetadata(id, type) {
   try {
     let tmdbId = id, s = 1, e = 1;
+    // Se è serie, l'ID è del tipo "tt12345:1:5"
     if (type === "series" && id.includes(":")) [tmdbId, s, e] = id.split(":");
     
+    // Cinemeta lavora bene con tt12345
     const { data: cData } = await axios.get(`${CONFIG.CINEMETA_URL}/meta/${type}/${tmdbId.split(":")[0]}.json`, { timeout: CONFIG.TIMEOUT_TMDB }).catch(() => ({ data: {} }));
     
     return cData?.meta ? {
       title: cData.meta.name,
       originalTitle: cData.meta.name,
       year: cData.meta.year?.split("–")[0],
-      imdb_id: tmdbId.split(":")[0],
+      imdb_id: tmdbId.split(":")[0], // Questo ID viene passato agli scraper
       isSeries: type === "series",
       season: parseInt(s),
       episode: parseInt(e)
@@ -281,10 +272,44 @@ async function getMetadata(id, type) {
   } catch { return null; }
 }
 
+// 🔥 FUNZIONE PRINCIPALE MODIFICATA PER GESTIRE TMDB 🔥
 async function generateStream(type, id, config, userConfStr) {
   if (!config.rd) return { streams: [{ name: "⚠️ CONFIG", title: "Serve RealDebrid API Key" }] };
   
-  const meta = await getMetadata(id, type); if (!meta) return { streams: [] };
+  let finalId = id; // Default: usiamo l'ID in ingresso
+  
+  // 1. RILEVAMENTO TMDB (es. tmdb:12345 o tmdb:12345:1:5)
+  if (id.startsWith("tmdb:")) {
+      console.log(`\n🕵️ Rilevato ID TMDB: ${id}`);
+      try {
+          const parts = id.split(":");
+          const tmdbId = parts[1];
+          // Chiamata al convertitore esterno
+          const imdbId = await tmdbToImdb(tmdbId, type);
+          
+          if (imdbId) {
+              // Ricostruzione ID in formato IMDb compatibile con Stremio
+              if (type === "series" && parts.length >= 4) {
+                  const s = parts[2];
+                  const e = parts[3];
+                  finalId = `${imdbId}:${s}:${e}`; // Esempio: tt12345:1:5
+              } else {
+                  finalId = imdbId; // Esempio: tt12345
+              }
+              console.log(`✅ Convertito con successo: TMDB ${tmdbId} -> IMDB ${finalId}`);
+          } else {
+              console.log(`⚠️ Impossibile convertire TMDB ${tmdbId}. Procedo con ID originale (rischio 0 risultati).`);
+          }
+      } catch (err) {
+          console.error("❌ Errore critico durante la conversione ID:", err.message);
+      }
+  }
+
+  // 2. RECUPERO METADATI (Usa finalId, che ora è preferibilmente un tt...)
+  const meta = await getMetadata(finalId, type); 
+  
+  if (!meta) return { streams: [] };
+  
   const queries = meta.isSeries ? buildSeriesQueries(meta) : buildMovieQueries(meta);
   const onlyIta = config.filters?.onlyIta !== false;
 
@@ -324,6 +349,7 @@ async function generateStream(type, id, config, userConfStr) {
     console.log("⚠️ Attivo External (ID Search)...");
     const extPromises = [];
     FALLBACK_SCRAPERS.forEach(fb => {
+        // Nota: anche qui passiamo meta.imdb_id corretto
         extPromises.push(LIMITERS.scraper.schedule(() => withTimeout(fb.searchMagnet(null, meta.year, type, meta.imdb_id), CONFIG.SCRAPER_TIMEOUT).catch(() => [])));
     });
     const extResults = (await Promise.all(extPromises)).flat();
@@ -342,7 +368,6 @@ async function generateStream(type, id, config, userConfStr) {
 
   if (!cleanResults.length) return { streams: [{ name: "⛔", title: "Nessun risultato trovato" }] };
 
-  // OTTIMIZZAZIONE MASSIVA: Controlliamo i top 40 risultati per la cache RD
   const ranked = rankAndFilterResults(cleanResults, meta).slice(0, CONFIG.MAX_RESULTS);
   
   const rdPromises = ranked.map(item => LIMITERS.rd.schedule(() => resolveRdLinkOptimized(config.rd, item, config.filters?.showFake)));
@@ -386,7 +411,7 @@ async function resolveRdLinkOptimized(rdKey, item, showFake) {
 
 // --- ROUTES ---
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
-app.get("/:conf/manifest.json", (req, res) => { const m = { id: "org.corsaro.brain.v28.4", version: "28.4.0", name: "Corsaro Brain (Hyper Fast)", resources: ["catalog", "stream"], types: ["movie", "series"], catalogs: [] }; m.behaviorHints = { configurable: true, configurationRequired: false }; res.setHeader("Access-Control-Allow-Origin", "*"); res.json(m); });
+app.get("/:conf/manifest.json", (req, res) => { const m = { id: "org.corsaro.brain.v28.5", version: "28.5.0", name: "Corsaro Brain (TMDB Ready)", resources: ["catalog", "stream"], types: ["movie", "series"], catalogs: [] }; m.behaviorHints = { configurable: true, configurationRequired: false }; res.setHeader("Access-Control-Allow-Origin", "*"); res.json(m); });
 app.get("/:conf/catalog/:type/:id/:extra?.json", async (req, res) => { res.setHeader("Access-Control-Allow-Origin", "*"); res.json({metas:[]}); });
 app.get("/:conf/stream/:type/:id.json", async (req, res) => { const result = await generateStream(req.params.type, req.params.id.replace(".json", ""), getConfig(req.params.conf), req.params.conf); res.setHeader("Access-Control-Allow-Origin", "*"); res.json(result); });
 
@@ -394,4 +419,4 @@ function getConfig(configStr) { try { return JSON.parse(Buffer.from(configStr, "
 function withTimeout(promise, ms) { return Promise.race([promise, new Promise(r => setTimeout(() => r([]), ms))]); }
 
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`🚀 Corsaro Brain v28.4.0 (Hyper Fast) su porta ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Corsaro Brain v28.5.0 (TMDB Support) su porta ${PORT}`));
