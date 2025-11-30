@@ -1,33 +1,30 @@
-// Corsaro Brain - NO CACHE EDITION
-// Versione: 28.1.0-nocache
+// Corsaro Brain - HYPER FAST EDITION
+// Versione: 28.4.0-hyperspeed
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const path = require("path");
 const axios = require("axios");
-// const NodeCache = require("node-cache"); // <-- RIMOSSO
 const Bottleneck = require("bottleneck");
 const FuzzySet = require("fuzzyset");
 
-// --- CONFIGURAZIONE ---
+// --- CONFIGURAZIONE HYPER FAST ---
 const CONFIG = {
   CINEMETA_URL: "https://v3-cinemeta.strem.io",
   REAL_SIZE_FILTER: 80 * 1024 * 1024,
-  TIMEOUT_TMDB: 4000,
-  SCRAPER_TIMEOUT: 15000, 
-  MAX_RESULTS: 100,
+  TIMEOUT_TMDB: 1500,
+  SCRAPER_TIMEOUT: 6000, // Ridotto a 6s: tempo massimo totale di attesa per gli scraper
+  MAX_RESULTS: 40, // Aumentato a 40: ottimo equilibrio tra velocità e numero di risultati
   FUZZY_THRESHOLD: 0.6,
 };
 
-// const CACHE_TTL = { STD: 300, CHECK: 60 }; // <-- RIMOSSO
-
-// --- LIMITERS ---
+// --- LIMITERS ESTREMI ---
 const LIMITERS = {
-  scraper: new Bottleneck({ maxConcurrent: 20, minTime: 50 }),
-  rd: new Bottleneck({ maxConcurrent: 10, minTime: 100 }),
+  scraper: new Bottleneck({ maxConcurrent: 40, minTime: 10 }), // Massima aggressività sugli scraper
+  rd: new Bottleneck({ maxConcurrent: 25, minTime: 40 }), // Massima aggressività su RD (25 richieste concorrenti)
 };
 
-// --- MODULI SCRAPER ---
+// --- MODULI SCRAPER (NON MODIFICATO) ---
 const SCRAPER_MODULES = [
   require("./rd"),
   require("./engines") 
@@ -37,14 +34,13 @@ const FALLBACK_SCRAPERS = [
   require("./external"),
 ];
 
-// --- APP ---
+// --- APP (NON MODIFICATO) ---
 const app = express();
 app.use(helmet());
 app.use(cors());
 app.use(express.static(path.join(__dirname, "public")));
-// const internalCache = new NodeCache({ stdTTL: CACHE_TTL.STD, checkperiod: CACHE_TTL.CHECK, useClones: false }); // <-- RIMOSSO
 
-// --- UTILITIES ---
+// --- UTILITIES (NON MODIFICATO) ---
 const UNITS = ["B", "KB", "MB", "GB", "TB"];
 function formatBytes(bytes) {
   if (!+bytes) return "0 B";
@@ -98,7 +94,7 @@ function isSafeForItalian(item) {
   return /\b(ITA|ITALIAN|IT|MULTI|MUI|AC3|DTS)\b/i.test(item.title);
 }
 
-// --- VISUALS ---
+// --- VISUALS (NON MODIFICATO) ---
 function cleanFilename(filename) {
   if (!filename) return "";
   const yearMatch = filename.match(/(19|20)\d{2}/);
@@ -207,7 +203,7 @@ async function getMetadata(id, type) {
     let tmdbId = id, s = 1, e = 1;
     if (type === "series" && id.includes(":")) [tmdbId, s, e] = id.split(":");
     
-    const { data: cData } = await axios.get(`${CONFIG.CINEMETA_URL}/meta/${type}/${tmdbId.split(":")[0]}.json`, { timeout: 2000 }).catch(() => ({ data: {} }));
+    const { data: cData } = await axios.get(`${CONFIG.CINEMETA_URL}/meta/${type}/${tmdbId.split(":")[0]}.json`, { timeout: CONFIG.TIMEOUT_TMDB }).catch(() => ({ data: {} }));
     
     return cData?.meta ? {
       title: cData.meta.name,
@@ -224,15 +220,11 @@ async function getMetadata(id, type) {
 async function generateStream(type, id, config, userConfStr) {
   if (!config.rd) return { streams: [{ name: "⚠️ CONFIG", title: "Serve RealDebrid API Key" }] };
   
-  // --- CACHE RIMOSSA ---
-  // const cacheKey = `str:${userConfStr}:${type}:${id}`;
-  // const cached = internalCache.get(cacheKey); if (cached) return cached;
-
   const meta = await getMetadata(id, type); if (!meta) return { streams: [] };
   const queries = meta.isSeries ? buildSeriesQueries(meta) : buildMovieQueries(meta);
   const onlyIta = config.filters?.onlyIta !== false;
 
-  console.log(`\n🔎 CERCO: "${meta.title}" (ID: ${meta.imdb_id}) | Queries: ${queries.join(", ")}`);
+  console.log(`\n🔎 CERCO: "${meta.title}" (ID: ${meta.imdb_id})`);
 
   let promises = [];
   queries.forEach(q => {
@@ -251,7 +243,6 @@ async function generateStream(type, id, config, userConfStr) {
   let resultsRaw = (await Promise.all(promises)).flat();
   console.log(`📥 TOTALE GREZZI: ${resultsRaw.length}`);
 
-  // 2. Filtro
   resultsRaw = resultsRaw.filter(item => {
     if (!item?.magnet) return false;
     if (!isTitleSafe(meta.title, item.title)) return false;
@@ -265,9 +256,7 @@ async function generateStream(type, id, config, userConfStr) {
     return true;
   });
 
-  console.log(`✅ SOPRAVVISSUTI: ${resultsRaw.length}`);
-
-  if (resultsRaw.length < 2) {
+  if (resultsRaw.length < 1) {
     console.log("⚠️ Attivo External (ID Search)...");
     const extPromises = [];
     FALLBACK_SCRAPERS.forEach(fb => {
@@ -289,13 +278,13 @@ async function generateStream(type, id, config, userConfStr) {
 
   if (!cleanResults.length) return { streams: [{ name: "⛔", title: "Nessun risultato trovato" }] };
 
+  // OTTIMIZZAZIONE MASSIVA: Controlliamo i top 40 risultati per la cache RD
   const ranked = rankAndFilterResults(cleanResults, meta).slice(0, CONFIG.MAX_RESULTS);
+  
   const rdPromises = ranked.map(item => LIMITERS.rd.schedule(() => resolveRdLinkOptimized(config.rd, item, config.filters?.showFake)));
   const streams = (await Promise.all(rdPromises)).filter(Boolean);
   
-  const res = { streams }; // Rimosso behaviorHints di cache
-  // internalCache.set(cacheKey, res); // <-- RIMOSSO
-  return res;
+  return { streams }; 
 }
 
 function rankAndFilterResults(results, meta) {
@@ -333,7 +322,7 @@ async function resolveRdLinkOptimized(rdKey, item, showFake) {
 
 // --- ROUTES ---
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
-app.get("/:conf/manifest.json", (req, res) => { const m = { id: "org.corsaro.brain.v28.1", version: "28.1.0", name: "Corsaro Brain (No Cache)", resources: ["catalog", "stream"], types: ["movie", "series"], catalogs: [] }; m.behaviorHints = { configurable: true, configurationRequired: false }; res.setHeader("Access-Control-Allow-Origin", "*"); res.json(m); });
+app.get("/:conf/manifest.json", (req, res) => { const m = { id: "org.corsaro.brain.v28.4", version: "28.4.0", name: "Corsaro Brain (Hyper Fast)", resources: ["catalog", "stream"], types: ["movie", "series"], catalogs: [] }; m.behaviorHints = { configurable: true, configurationRequired: false }; res.setHeader("Access-Control-Allow-Origin", "*"); res.json(m); });
 app.get("/:conf/catalog/:type/:id/:extra?.json", async (req, res) => { res.setHeader("Access-Control-Allow-Origin", "*"); res.json({metas:[]}); });
 app.get("/:conf/stream/:type/:id.json", async (req, res) => { const result = await generateStream(req.params.type, req.params.id.replace(".json", ""), getConfig(req.params.conf), req.params.conf); res.setHeader("Access-Control-Allow-Origin", "*"); res.json(result); });
 
@@ -341,4 +330,4 @@ function getConfig(configStr) { try { return JSON.parse(Buffer.from(configStr, "
 function withTimeout(promise, ms) { return Promise.race([promise, new Promise(r => setTimeout(() => r([]), ms))]); }
 
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`🚀 Corsaro Brain v28.1.0 (No Cache) su porta ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Corsaro Brain v28.4.0 (Hyper Fast) su porta ${PORT}`));
