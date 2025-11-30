@@ -24,7 +24,7 @@ const LIMITERS = {
   rd: new Bottleneck({ maxConcurrent: 25, minTime: 40 }), // Massima aggressività su RD (25 richieste concorrenti)
 };
 
-// --- MODULI SCRAPER (NON MODIFICATO) ---
+// --- MODULI SCRAPER  ---
 const SCRAPER_MODULES = [
   require("./rd"),
   require("./engines") 
@@ -36,11 +36,13 @@ const FALLBACK_SCRAPERS = [
 
 // --- APP (NON MODIFICATO) ---
 const app = express();
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false, 
+}));
 app.use(cors());
 app.use(express.static(path.join(__dirname, "public")));
 
-// --- UTILITIES (NON MODIFICATO) ---
+// --- UTILITIES  ---
 const UNITS = ["B", "KB", "MB", "GB", "TB"];
 function formatBytes(bytes) {
   if (!+bytes) return "0 B";
@@ -88,10 +90,23 @@ function isTitleSafe(metaTitle, filename) {
   return false;
 }
 
-// 🔥🔥 FILTRO SEVERO 🔥🔥
+// 🔥🔥 FILTRO SEVERO (AGGIORNATO) 🔥🔥
 function isSafeForItalian(item) {
   if (!item || !item.title) return false;
-  return /\b(ITA|ITALIAN|IT|MULTI|MUI|AC3|DTS)\b/i.test(item.title);
+  const t = item.title.toUpperCase();
+  
+  // Cattura TUTTI i formati italiani moderni
+  const itaPatterns = [
+    /\b(ITA|ITALIAN|IT|ITL|ITALY)\b/,
+    /\b(MULTI|MUII|MUL|MULTILANGUAGE)\b.*\b(ITA|IT|ITALIAN)\b/,
+    /\b(AC3|DTS).*\b(ITA|IT|ITALIAN)\b/, 
+    /\b(SUB.?ITA|SUBS.?ITA|SOTTOTITOLI.?ITA)\b/,
+    /\b(VC[._-]?I|VO.?ITA|AUD.?ITA)\b/,           // Audio italiano forzato
+    /\b(ITA.?ENG)\b/,                             // Ita come prima lingua
+    /ITALIAN.*(DL|Mux|WEBRip|BluRay)/i
+  ];
+  
+  return itaPatterns.some(p => p.test(t));
 }
 
 // --- VISUALS (NON MODIFICATO) ---
@@ -201,27 +216,42 @@ function formatStreamTitleCinePro(fileTitle, source, size, seeders) {
     return { name, title: fullTitle };
 }
 
-
+// ** QUERY SERIES BOOSTED **
 function buildSeriesQueries(meta) {
   const { title, originalTitle: orig, season: s, episode: e } = meta;
   const ss = String(s).padStart(2, "0");
   const ee = String(e).padStart(2, "0");
   
   let queries = new Set();
+  // Query Standard
   queries.add(`${title} S${ss}E${ee}`);
   queries.add(`${title} S${ss}`); 
 
+  // Query Dr House Fix
   if (title.toLowerCase().includes("house")) {
       queries.add(`Dr House S${ss}E${ee}`);
       queries.add(`Dr House S${ss}`);
       queries.add(`House MD S${ss}E${ee}`);
   }
 
+  // Query Original Title Standard
   if (orig && orig !== title) {
     queries.add(`${orig} S${ss}E${ee}`);
     queries.add(`${orig} S${ss}`);
   }
   queries.add(`${title} ${s}x${ee}`);
+
+  // --- BOOST PACK STAGIONE ---
+  queries.add(`${title} Stagione ${s} ITA`);
+  queries.add(`${title} Stagione ${s} COMPLETE`);
+  queries.add(`${title} Stagione ${s} PACK`);
+  queries.add(`${title} Season ${s} ITA`);
+  
+  if (orig && orig !== title) {
+    queries.add(`${orig} Stagione ${s} ITA`);
+    queries.add(`${orig} Season ${s} ITA`);
+  }
+
   return [...queries];
 }
 
