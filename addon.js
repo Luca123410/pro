@@ -1,5 +1,5 @@
 // Corsaro Brain - HYPER FAST EDITION
-// Versione: 28.5.0-tmdb-support
+// Versione: 28.6.0-external-boost
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -345,27 +345,72 @@ async function generateStream(type, id, config, userConfStr) {
     return true;
   });
 
-  if (resultsRaw.length < 1) {
-    console.log("⚠️ Attivo External (ID Search)...");
-    const extPromises = [];
-    FALLBACK_SCRAPERS.forEach(fb => {
-        // Nota: anche qui passiamo meta.imdb_id corretto
-        extPromises.push(LIMITERS.scraper.schedule(() => withTimeout(fb.searchMagnet(null, meta.year, type, meta.imdb_id), CONFIG.SCRAPER_TIMEOUT).catch(() => [])));
+  // 🔥 FIX ANTI-BLOCCO: EXTERNAL CON TIMEOUT GESTITO CORRETTAMENTE 🔥
+  if (resultsRaw.length <= 5) {
+    console.log(`⚠️ Risultati scarsi (${resultsRaw.length}). Attivo External (ID Search)...`);
+    
+    const extPromises = FALLBACK_SCRAPERS.map(fb => {
+        return LIMITERS.scraper.schedule(async () => {
+            try {
+                // Passiamo queries[0] (titolo) e finalId (ID completo)
+                return await withTimeout(fb.searchMagnet(queries[0], meta.year, type, finalId), CONFIG.SCRAPER_TIMEOUT);
+            } catch (err) {
+                console.log(`❌ External Error: ${err.message}`);
+                return [];
+            }
+        });
     });
-    const extResults = (await Promise.all(extPromises)).flat();
-    resultsRaw = [...resultsRaw, ...extResults];
-  }
 
-  const seen = new Set(); 
+    try {
+        let timeoutHandle;
+        
+        // Promise del Timeout che possiamo cancellare
+        const timeoutPromise = new Promise(resolve => {
+            timeoutHandle = setTimeout(() => {
+                console.log("⏰ External Search TEMPO SCADUTO (Skip forzato)");
+                resolve([]);
+            }, CONFIG.SCRAPER_TIMEOUT + 1500); // 1.5s di grazia extra
+        });
+
+        // Promise della Ricerca che cancella il timeout se vince
+        const searchPromise = Promise.all(extPromises).then(res => {
+            clearTimeout(timeoutHandle); // 🛑 SPEGNE IL TIMER SE ABBIAMO FINITO!
+            return res;
+        });
+
+        const extResultsRaw = await Promise.race([searchPromise, timeoutPromise]);
+
+        if (Array.isArray(extResultsRaw)) {
+             const extFlat = extResultsRaw.flat();
+             console.log(`✅ External ha trovato: ${extFlat.length} nuovi risultati`);
+             resultsRaw = [...resultsRaw, ...extFlat];
+        }
+    } catch (e) {
+        console.log("❌ Errore critico nel blocco External:", e.message);
+    }
+  }const seen = new Set(); 
   let cleanResults = [];
+  
+  // 🔥 FIX CRASH DEFINITIVO: Filtra risultati corrotti 🔥
   for (const item of resultsRaw) {
-    const hash = item.magnet.match(/btih:([a-f0-9]{40})/i)?.[1].toUpperCase() || item.magnet;
-    if (seen.has(hash)) continue;
-    seen.add(hash);
-    item._size = parseSize(item.size || item.sizeBytes);
-    cleanResults.push(item);
-  }
+    // Controllo di sicurezza: se l'item è nullo o non ha il magnet, SALTA
+    if (!item || !item.magnet) continue;
 
+    try {
+        // Safe match
+        const hashMatch = item.magnet.match(/btih:([a-f0-9]{40})/i);
+        const hash = hashMatch ? hashMatch[1].toUpperCase() : item.magnet;
+        
+        if (seen.has(hash)) continue;
+        seen.add(hash);
+        
+        item._size = parseSize(item.size || item.sizeBytes);
+        cleanResults.push(item);
+    } catch (err) {
+        // Se succede qualcosa di strano con un singolo file, lo ignoriamo e andiamo avanti
+        continue;
+    }
+  }
   if (!cleanResults.length) return { streams: [{ name: "⛔", title: "Nessun risultato trovato" }] };
 
   const ranked = rankAndFilterResults(cleanResults, meta).slice(0, CONFIG.MAX_RESULTS);
@@ -411,7 +456,7 @@ async function resolveRdLinkOptimized(rdKey, item, showFake) {
 
 // --- ROUTES ---
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
-app.get("/:conf/manifest.json", (req, res) => { const m = { id: "org.corsaro.brain.v28.5", version: "28.5.0", name: "Corsaro Brain (TMDB Ready)", resources: ["catalog", "stream"], types: ["movie", "series"], catalogs: [] }; m.behaviorHints = { configurable: true, configurationRequired: false }; res.setHeader("Access-Control-Allow-Origin", "*"); res.json(m); });
+app.get("/:conf/manifest.json", (req, res) => { const m = { id: "org.corsaro.brain.v28.6", version: "28.6.0", name: "Corsaro Brain (External Boost)", resources: ["catalog", "stream"], types: ["movie", "series"], catalogs: [] }; m.behaviorHints = { configurable: true, configurationRequired: false }; res.setHeader("Access-Control-Allow-Origin", "*"); res.json(m); });
 app.get("/:conf/catalog/:type/:id/:extra?.json", async (req, res) => { res.setHeader("Access-Control-Allow-Origin", "*"); res.json({metas:[]}); });
 app.get("/:conf/stream/:type/:id.json", async (req, res) => { const result = await generateStream(req.params.type, req.params.id.replace(".json", ""), getConfig(req.params.conf), req.params.conf); res.setHeader("Access-Control-Allow-Origin", "*"); res.json(result); });
 
@@ -419,4 +464,4 @@ function getConfig(configStr) { try { return JSON.parse(Buffer.from(configStr, "
 function withTimeout(promise, ms) { return Promise.race([promise, new Promise(r => setTimeout(() => r([]), ms))]); }
 
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`🚀 Corsaro Brain v28.5.0 (TMDB Support) su porta ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Corsaro Brain v28.6.0 (External Boost) su porta ${PORT}`));
