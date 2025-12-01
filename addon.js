@@ -421,6 +421,7 @@ async function generateStream(type, id, config, userConfStr) {
   return { streams }; 
 }
 
+// FUNZIONE CLASSIFICA AGGIORNATA PER EVITARE I PACK QUANDO SERVE EPISODIO
 function rankAndFilterResults(results, meta) {
   return results.map(item => {
     const info = extractStreamInfo(item.title, item.source);
@@ -434,8 +435,23 @@ function rankAndFilterResults(results, meta) {
     
     if (item.source === "Corsaro") score += 1000;
 
-    // Bonus per match esatto episodio (se il motore lo ha trovato)
-    if (meta.isSeries && new RegExp(`S${String(meta.season).padStart(2,'0')}E${String(meta.episode).padStart(2,'0')}`, "i").test(item.title)) score += 1500;
+    // --- FIX SERIE TV ---
+    if (meta.isSeries) {
+        const sStr = String(meta.season).padStart(2, '0');
+        const eStr = String(meta.episode).padStart(2, '0');
+        
+        // Regex stretta per l'episodio esatto (es. S01E05)
+        const exactEpRegex = new RegExp(`S${sStr}[^0-9]*E${eStr}`, "i");
+        const xEpRegex = new RegExp(`${meta.season}x${eStr}`, "i");
+
+        if (exactEpRegex.test(item.title) || xEpRegex.test(item.title)) {
+            score += 5000; // SUPER BOOST per l'episodio esatto
+        } else if (/pack|stagione|season/i.test(item.title)) {
+            // Se è un pack e stiamo cercando un episodio, penalizzalo pesantemente
+            // così se ci sono episodi singoli, vinceranno sempre loro.
+            score -= 2000; 
+        }
+    }
     
     if (/cam|ts/i.test(item.title)) score -= 10000;
     
