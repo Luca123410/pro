@@ -1,4 +1,4 @@
-// rd.js - VERSIONE CHIRURGICA & INTELLIGENTE
+// rd.js - VERSIONE CHIRURGICA & AUTO-PULENTE
 const axios = require("axios");
 const RD_TIMEOUT = 120000;
 
@@ -67,6 +67,17 @@ async function rdRequest(method, url, token, data = null) {
 }
 
 const RD = {
+    // 🗑️ NUOVA FUNZIONE: Pulizia Torrent (Ispirata al codice Python)
+    deleteTorrent: async (token, torrentId) => {
+        try {
+            const url = `https://api.real-debrid.com/rest/1.0/torrents/delete/${torrentId}`;
+            await rdRequest('DELETE', url, token);
+            // console.log(`🧹 RD: Torrent ${torrentId} pulito.`);
+        } catch (e) {
+            console.error(`⚠️ Errore pulizia torrent ${torrentId}:`, e.message);
+        }
+    },
+
     checkInstantAvailability: async (token, hashes) => {
         try {
             const hashString = hashes.join('/');
@@ -75,8 +86,8 @@ const RD = {
         } catch (e) { return {}; }
     },
 
-    // MODIFICA: Ora accetta season ed episode opzionali
     getStreamLink: async (token, magnet, season = null, episode = null) => {
+        let torrentId = null; // Salviamo l'ID per pulizia in caso di errore
         try {
             // 1. Aggiungi Magnet
             const addUrl = "https://api.real-debrid.com/rest/1.0/torrents/addMagnet";
@@ -85,11 +96,14 @@ const RD = {
             
             const addRes = await rdRequest('POST', addUrl, token, body);
             if (!addRes || !addRes.id) return null;
-            const torrentId = addRes.id;
+            torrentId = addRes.id;
 
             // 2. Info Torrent
             let info = await rdRequest('GET', `https://api.real-debrid.com/rest/1.0/torrents/info/${torrentId}`, token);
-            if (!info) return null;
+            if (!info) {
+                await RD.deleteTorrent(token, torrentId);
+                return null;
+            }
 
             // 3. Seleziona File (Intelligente)
             if (info.status === 'waiting_files_selection') {
@@ -117,7 +131,18 @@ const RD = {
                 info = await rdRequest('GET', `https://api.real-debrid.com/rest/1.0/torrents/info/${torrentId}`, token);
             }
 
-            if (!info || !info.links?.length) return null;
+            // ⚠️ CONTROLLO CRUCIALE: Se non è 'downloaded', non è pronto per lo streaming.
+            // Cancelliamo il torrent per non intasare l'account dell'utente.
+            if (info.status !== 'downloaded') {
+                // console.log(`⏳ Torrent ${torrentId} non in cache (Stato: ${info.status}). Pulizia...`);
+                await RD.deleteTorrent(token, torrentId);
+                return null;
+            }
+
+            if (!info || !info.links?.length) {
+                await RD.deleteTorrent(token, torrentId);
+                return null;
+            }
 
             // 4. Trova il link giusto
             // Se abbiamo selezionato un file specifico, info.links[0] è quello giusto.
@@ -129,7 +154,12 @@ const RD = {
             unResBody.append("link", linkToUnrestrict);
 
             const unrestrictRes = await rdRequest('POST', unrestrictUrl, token, unResBody);
-            if (!unrestrictRes) return null;
+            
+            if (!unrestrictRes) {
+                // Se l'unrestrict fallisce, puliamo il torrent
+                await RD.deleteTorrent(token, torrentId);
+                return null;
+            }
 
             return {
                 type: 'ready',
@@ -139,6 +169,8 @@ const RD = {
             };
         } catch (e) { 
             console.error("RD Error:", e.message);
+            // Pulizia di emergenza in caso di crash
+            if (torrentId) await RD.deleteTorrent(token, torrentId);
             return null; 
         }
     }
