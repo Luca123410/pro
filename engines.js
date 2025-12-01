@@ -52,16 +52,14 @@ function parseImdbId(imdbId) {
     return { season: null, episode: null };
 }
 
-// --- LOGICA DI PARSING POTENZIATA (STRICT MODE) ---
-
+// Helper per estrarre numeri dal nome file (VERSIONE MIGLIORATA)
 function extractInfo(name) {
-    const upper = name.toUpperCase().replace(/\./g, " "); // Sostituisce i punti con spazi
+    const upper = name.toUpperCase();
     let season = null;
     let episode = null;
-    let isPack = false;
 
     // 1. Cerca formato standard S01E01 / S1E1
-    const standardMatch = upper.match(/S(\d{1,2})\s?[EX](\d{1,3})/);
+    const standardMatch = upper.match(/S(\d{1,2})[._\s-]*E(\d{1,3})/);
     if (standardMatch) {
         season = parseInt(standardMatch[1]);
         episode = parseInt(standardMatch[2]);
@@ -72,30 +70,28 @@ function extractInfo(name) {
             season = parseInt(xMatch[1]);
             episode = parseInt(xMatch[2]);
         } else {
-            // 3. Cerca SOLO Stagione (Pack) -> Rilevamento migliorato
+            // 3. Cerca "Stagione X" o "Season X"
             const sMatch = upper.match(/(?:STAGIONE|SEASON|S)\s?(\d{1,2})(?![0-9])/);
-            if (sMatch) {
-                season = parseInt(sMatch[1]);
-                // Se c'è "Stagione X" ma NON c'è un indicatore chiaro di episodio, è un pack
-                if (!/(?:EPISODIO|EP\.|E)(\d{1,3})/.test(upper)) {
-                    isPack = true;
-                }
-            }
-            
-            // 4. Cerca episodio isolato (raro)
+            if (sMatch) season = parseInt(sMatch[1]);
+
+            // 4. Cerca "Episodio X" o "Ep. X"
             const eMatch = upper.match(/(?:EPISODIO|EP\.|_|\s)(\d{1,3})(?!\d|p|k|bit|mb|gb)/);
-            if (eMatch && !isPack) episode = parseInt(eMatch[1]);
+            if (eMatch) episode = parseInt(eMatch[1]);
         }
     }
-    return { season, episode, isPack };
+    return { season, episode };
 }
 
-// FILTRO RIGOROSO PER LE SERIE
+// LOGICA FILTRO PERFETTO (Strict Mode)
 function isCorrectFormat(name, reqSeason, reqEpisode) {
     // Se non ci sono requisiti (es. Film), passa tutto
     if (!reqSeason && !reqEpisode) return true;
 
     const info = extractInfo(name);
+    const upperName = name.toUpperCase();
+    
+    // Rileva Pack
+    const isPack = upperName.includes("COMPLET") || upperName.includes("PACK") || upperName.includes("TUTTE") || upperName.includes("STAGIONE") || upperName.includes("SEASON");
 
     // 1. Controllo STAGIONE
     if (reqSeason) {
@@ -105,14 +101,14 @@ function isCorrectFormat(name, reqSeason, reqEpisode) {
 
     // 2. Controllo EPISODIO
     if (reqEpisode) {
+        // Se trovo un episodio specifico nel nome file (es. E01)
         if (info.episode !== null) {
-            // Se il file dichiara un episodio, DEVE essere quello richiesto
+            // Se è diverso da quello richiesto -> SCARTA (Risolve il problema 2x01 vs 2x05)
             if (info.episode !== reqEpisode) return false;
         } else {
-            // Se il file NON dichiara un episodio:
-            // SCARTA I PACK (Stagioni complete) perché non sappiamo quale file prendere.
-            // Questo risolve il problema "clicco ep 5 e parte ep 1".
-            return false;
+            // Se NON trovo l'episodio nel nome del file:
+            // Accetto SOLO se è un Pack completo che corrisponde alla stagione (o non ha stagione specificata)
+            if (!isPack) return false; 
         }
     }
 
