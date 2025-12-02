@@ -1,5 +1,12 @@
-// Corsaro Brain - LEVIATHAN EDITION (Multi-Debrid)
-// Versione: 30.2.0-LEVIATHAN
+/**
+ * addon.js
+ * Corsaro Brain — LEVIATHAN EDITION (Fixed & Optimized)
+ * * Changelog:
+ * - Fix Ricerca Serie: Aggiunto anno alla query di ricerca.
+ * - Fix Filtri: isTitleSafe reso più rigido per evitare falsi positivi.
+ * - Removed: Codice SQL/Sequelize incompatibile.
+ */
+
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -8,10 +15,10 @@ const axios = require("axios");
 const Bottleneck = require("bottleneck");
 const FuzzySet = require("fuzzyset");
 
-// 🔥 IMPORTIAMO IL CONVERTITORE 🔥
+//  IMPORTIAMO IL CONVERTITORE
 const { tmdbToImdb } = require("./id_converter");
 
-// 🔥 IMPORTIAMO I MODULI DEBRID (DALLA CARTELLA DEDICATA) 🔥
+//  IMPORTIAMO I MODULI DEBRID
 const RD = require("./debrid/realdebrid");
 const AD = require("./debrid/alldebrid");
 const TB = require("./debrid/torbox");
@@ -19,11 +26,11 @@ const TB = require("./debrid/torbox");
 // --- CONFIGURAZIONE ---
 const CONFIG = {
   CINEMETA_URL: "https://v3-cinemeta.strem.io",
-  REAL_SIZE_FILTER: 80 * 1024 * 1024, 
-  TIMEOUT_TMDB: 1500,
+  REAL_SIZE_FILTER: 80 * 1024 * 1024, // Filtra file < 80MB (spesso fake)
+  TIMEOUT_TMDB: 2000,
   SCRAPER_TIMEOUT: 6000, 
   MAX_RESULTS: 40, 
-  FUZZY_THRESHOLD: 0.6,
+  FUZZY_THRESHOLD: 0.85, // Alzato da 0.6 a 0.85 per precisione
 };
 
 // --- LIMITERS ---
@@ -33,6 +40,7 @@ const LIMITERS = {
 };
 
 // --- MOTORI DI RICERCA ---
+// Assicurati di avere engines.js e external.js nella root
 const SCRAPER_MODULES = [
   require("./engines") 
 ];
@@ -65,7 +73,10 @@ function parseSize(sizeStr) {
   return val * (mult[unit] || 1);
 }
 
-// ** SMART MATCHING **
+// ==========================================
+//  SMART MATCHING & FILTERING (FIXED)
+// ==========================================
+
 function isTitleSafe(metaTitle, filename) {
   const clean = (str) => String(str).toLowerCase()
     .replace(/\b(dr\.|doctor|m\.d\.|md|us|uk|20\d{2})\b/g, "") 
@@ -75,27 +86,37 @@ function isTitleSafe(metaTitle, filename) {
   const q = clean(metaTitle);
   const f = clean(filename);
 
-  if (q === "house") {
-      if (f.includes("dragon") || f.includes("cards") || f.includes("guinness") || f.includes("full house")) return false;
-      if (f.includes("dr") || f.includes("md") || f.includes("medical")) return true;
+  // 1. Check Diretto: Se il titolo pulito non è nel filename, è sospetto.
+  if (!f.includes(q)) {
+      // Eccezione per titoli lunghi con piccoli typo (Fuzzy Search)
+      if (q.length > 5) {
+          try {
+            const fs = FuzzySet([q]);
+            const match = fs.get(f);
+            // Richiediamo un match molto alto (85%)
+            if (match && match[0][0] > CONFIG.FUZZY_THRESHOLD) return true;
+          } catch (e) { return false; }
+      }
+      return false; // Se non c'è match diretto e il titolo è corto, rifiuta.
   }
 
+  // 2. Logica specifica per parole corte rischiose (es. "House")
+  if (q === "house") {
+      // Scarta varianti non pertinenti
+      if (f.includes("dragon") || f.includes("cards") || f.includes("full house") || f.includes("guinness")) return false;
+      // Accetta solo se sembra la serie medica
+      if (f.includes("dr") || f.includes("md") || f.includes("medical") || f.includes("s0") || f.includes("stagione")) return true;
+      return false; 
+  }
+
+  // 3. Controllo parole esatte
   let words = q.split(/\s+/);
   if (words.length > 1) {
-      words = words.filter(w => !["it", "the", "a", "an", "le", "la", "il", "lo"].includes(w));
+      words = words.filter(w => !["it", "the", "a", "an", "le", "la", "il", "lo", "of"].includes(w));
   }
-
   const allWordsFound = words.every(w => new RegExp(`\\b${w}\\b`, 'i').test(f));
-  if (allWordsFound) return true;
-
-  if (q.length > 5) {
-      try {
-        const fs = FuzzySet([q]);
-        const match = fs.get(f);
-        if (match && match[0][0] > CONFIG.FUZZY_THRESHOLD) return true;
-      } catch (e) { return false; }
-  }
-  return false;
+  
+  return allWordsFound;
 }
 
 function isSafeForItalian(item) {
@@ -213,40 +234,67 @@ function formatStreamTitleCinePro(fileTitle, source, size, seeders, serviceTag =
     return { name, title: fullTitle };
 }
 
+// ==========================================
+// 🔎 QUERY BUILDER (FIXED)
+// ==========================================
+
 function buildSeriesQueries(meta) {
-  const { title, originalTitle: orig, season: s, episode: e } = meta;
+  const { title, originalTitle: orig, season: s, episode: e, year } = meta;
   const ss = String(s).padStart(2, "0");
   const ee = String(e).padStart(2, "0");
+  
   let queries = new Set();
+  
+  // 1. Standard: Nome SxxExx
   queries.add(`${title} S${ss}E${ee}`);
+  
+  // 2. 🔥 CRITICO: Nome + Anno (risolve il problema delle serie omonime/sballate)
+  if (year) {
+      queries.add(`${title} ${year} S${ss}E${ee}`);
+      queries.add(`${title} (${year}) S${ss}E${ee}`);
+  }
+
+  // 3. Stagioni Intere
   queries.add(`${title} S${ss}`); 
+  if (year) queries.add(`${title} ${year} S${ss}`);
+
+  // 4. Eccezioni note (Dr House)
   if (title.toLowerCase().includes("house")) {
       queries.add(`Dr House S${ss}E${ee}`);
       queries.add(`Dr House S${ss}`);
       queries.add(`House MD S${ss}E${ee}`);
   }
+
+  // 5. Titolo Originale
   if (orig && orig !== title) {
     queries.add(`${orig} S${ss}E${ee}`);
+    if (year) queries.add(`${orig} ${year} S${ss}E${ee}`);
     queries.add(`${orig} S${ss}`);
   }
+
+  // 6. Pattern XxY
   queries.add(`${title} ${s}x${ee}`);
+
+  // 7. Pattern Italiani (Pack)
   queries.add(`${title} Stagione ${s} ITA`);
   queries.add(`${title} Stagione ${s} COMPLETE`);
   queries.add(`${title} Stagione ${s} PACK`);
   queries.add(`${title} Season ${s} ITA`);
-  if (orig && orig !== title) {
-    queries.add(`${orig} Stagione ${s} ITA`);
-    queries.add(`${orig} Season ${s} ITA`);
-  }
+  
   return [...queries];
 }
 
 function buildMovieQueries(meta) {
   const { title, originalTitle: orig, year } = meta;
+  // Aggiungiamo sempre l'anno per evitare film omonimi
   const q = [`${title} ${year}`, `${title} ITA`];
   if (orig && orig !== title) q.push(`${orig} ${year}`);
   return q.filter(Boolean);
 }
+
+// ==========================================
+// 🧠 CORE LOGIC
+// ==========================================
 
 async function getMetadata(id, type) {
   try {
@@ -258,7 +306,7 @@ async function getMetadata(id, type) {
     return cData?.meta ? {
       title: cData.meta.name,
       originalTitle: cData.meta.name,
-      year: cData.meta.year?.split("–")[0],
+      year: cData.meta.year?.split("–")[0], // Prende l'anno di inizio
       imdb_id: tmdbId.split(":")[0], 
       isSeries: type === "series",
       season: parseInt(s),
@@ -267,7 +315,6 @@ async function getMetadata(id, type) {
   } catch { return null; }
 }
 
-// 🔥 ROUTER DEBRID INTELLIGENTE 🔥
 async function resolveDebridLink(config, item, showFake) {
     try {
         const service = config.service || 'rd'; // Default RD
@@ -307,20 +354,22 @@ async function resolveDebridLink(config, item, showFake) {
     }
 }
 
-// 🔥 FUNZIONE PRINCIPALE GENERATE STREAM 🔥
+// 🔥 GENERATE STREAM - FUNZIONE PRINCIPALE 🔥
 async function generateStream(type, id, config, userConfStr) {
   if (!config.key && !config.rd) return { streams: [{ name: "⚠️ CONFIG", title: "Inserisci API Key nel configuratore" }] };
   
   let finalId = id; 
   
-  // 1. RILEVAMENTO TMDB 
+  // 1. RILEVAMENTO E CONVERSIONE ID TMDB
   if (id.startsWith("tmdb:")) {
       try {
           const parts = id.split(":");
           const tmdbId = parts[1];
+          //  il convertitore importato
           const imdbId = await tmdbToImdb(tmdbId, type);
           
           if (imdbId) {
+              console.log(`✅ ID Converted: ${tmdbId} -> ${imdbId}`);
               if (type === "series" && parts.length >= 4) {
                   const s = parts[2];
                   const e = parts[3];
@@ -328,17 +377,20 @@ async function generateStream(type, id, config, userConfStr) {
               } else {
                   finalId = imdbId; 
               }
-          } 
-      } catch (err) { console.error("ID Convert Error"); }
+          } else {
+              console.log(`⚠️ ID Conversion Failed for ${tmdbId}`);
+          }
+      } catch (err) { console.error("ID Convert Error:", err.message); }
   }
 
   const meta = await getMetadata(finalId, type); 
   if (!meta) return { streams: [] };
   
+  // Costruisce le query 
   const queries = meta.isSeries ? buildSeriesQueries(meta) : buildMovieQueries(meta);
   const onlyIta = config.filters?.onlyIta !== false;
 
-  console.log(`\n🔎 [${config.service || 'rd'}] CERCO: "${meta.title}" (ID: ${finalId})`);
+  console.log(`\n🔎 [${config.service || 'rd'}] CERCO: "${meta.title}" (Anno: ${meta.year})`);
 
   let promises = [];
   queries.forEach(q => {
@@ -355,13 +407,16 @@ async function generateStream(type, id, config, userConfStr) {
 
   let resultsRaw = (await Promise.all(promises)).flat();
 
+  // Filtro iniziale
   resultsRaw = resultsRaw.filter(item => {
     if (!item?.magnet) return false;
+    // Usa la nuova funzione isTitleSafe più rigida
     if (!isTitleSafe(meta.title, item.title)) return false;
     if (onlyIta && !isSafeForItalian(item)) return false;
     return true;
   });
 
+  // Fallback se pochi risultati
   if (resultsRaw.length <= 5) {
     const extPromises = FALLBACK_SCRAPERS.map(fb => {
         return LIMITERS.scraper.schedule(async () => {
@@ -382,6 +437,7 @@ async function generateStream(type, id, config, userConfStr) {
     } catch (e) {}
   }
 
+  // Deduplicazione
   const seen = new Set(); 
   let cleanResults = [];
   for (const item of resultsRaw) {
@@ -395,13 +451,14 @@ async function generateStream(type, id, config, userConfStr) {
         cleanResults.push(item);
     } catch (err) { continue; }
   }
+  
   if (!cleanResults.length) return { streams: [{ name: "⛔", title: "Nessun risultato trovato" }] };
 
+  // Ranking e Sort
   const ranked = rankAndFilterResults(cleanResults, meta).slice(0, CONFIG.MAX_RESULTS);
   
-  // Risoluzione Link (Multi-Service)
+  // Risoluzione Link Debrid
   const rdPromises = ranked.map(item => {
-      // Passiamo metadati S/E all'item per i moduli AD/TB
       item.season = meta.season;
       item.episode = meta.episode;
       return LIMITERS.rd.schedule(() => resolveDebridLink(config, item, config.filters?.showFake));
@@ -411,17 +468,35 @@ async function generateStream(type, id, config, userConfStr) {
   return { streams }; 
 }
 
+// Funzione interna di ranking 
 function rankAndFilterResults(results, meta) {
   return results.map(item => {
     const info = extractStreamInfo(item.title, item.source);
     let score = 0;
+    
+    // Punti base lingua
     if (info.lang.includes("ITA")) score += 5000;
     else if (info.lang.includes("MULTI")) score += 3000;
+    
+    // Qualità
     if (info.quality === "4K") score += 1200;
     else if (info.quality === "1080p") score += 800;
+    
+    // Bonus Fonte
     if (item.source === "Corsaro") score += 1000;
-    if (meta.isSeries && new RegExp(`S${String(meta.season).padStart(2,'0')}E${String(meta.episode).padStart(2,'0')}`, "i").test(item.title)) score += 1500;
-    if (/cam|ts/i.test(item.title)) score -= 10000;
+    
+    // Bonus Episodio Esatto (IMPORTANTE)
+    const sStr = String(meta.season).padStart(2,'0');
+    const eStr = String(meta.episode).padStart(2,'0');
+    const regexEp = new RegExp(`S${sStr}[^0-9]*E${eStr}`, "i");
+    
+    if (meta.isSeries && regexEp.test(item.title)) {
+        score += 3000; // Boost aumentato per l'episodio esatto
+    }
+    
+    // Penalità CAM
+    if (/cam|ts|telesync/i.test(item.title)) score -= 10000;
+    
     return { item, score };
   }).sort((a, b) => b.score - a.score).map(x => x.item);
 }
@@ -429,17 +504,13 @@ function rankAndFilterResults(results, meta) {
 // --- ROUTES ---
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 
-// 🔥 ROUTE MANIFEST - QUI DEFINIAMO L'ICONA E IL NOME 🔥
 app.get("/:conf/manifest.json", (req, res) => { 
     const m = { 
-        id: "org.corsaro.brain.v30.2", 
-        version: "30.2.0", 
-        name: "Leviathan (Corsaro)", // Nuovo Nome
-        description: "Deep Sea Streaming Core | Multi-Debrid | ITA Priority", // Nuova Descrizione
-        
-        // 🐉 IL TUO LOGO DRAGO CIANO 🐉
+        id: "org.corsaro.brain.v30.3", 
+        version: "30.3.0", 
+        name: "Leviathan (Corsaro)", 
+        description: "Deep Sea Streaming Core | Multi-Debrid | ITA Priority", 
         logo: "https://img.icons8.com/ios-filled/500/00f2ea/dragon.png",
-        
         resources: ["catalog", "stream"], 
         types: ["movie", "series"], 
         catalogs: [] 
@@ -449,11 +520,19 @@ app.get("/:conf/manifest.json", (req, res) => {
     res.json(m); 
 });
 
-app.get("/:conf/catalog/:type/:id/:extra?.json", async (req, res) => { res.setHeader("Access-Control-Allow-Origin", "*"); res.json({metas:[]}); });
-app.get("/:conf/stream/:type/:id.json", async (req, res) => { const result = await generateStream(req.params.type, req.params.id.replace(".json", ""), getConfig(req.params.conf), req.params.conf); res.setHeader("Access-Control-Allow-Origin", "*"); res.json(result); });
+app.get("/:conf/catalog/:type/:id/:extra?.json", async (req, res) => { 
+    res.setHeader("Access-Control-Allow-Origin", "*"); 
+    res.json({metas:[]}); 
+});
+
+app.get("/:conf/stream/:type/:id.json", async (req, res) => { 
+    const result = await generateStream(req.params.type, req.params.id.replace(".json", ""), getConfig(req.params.conf), req.params.conf); 
+    res.setHeader("Access-Control-Allow-Origin", "*"); 
+    res.json(result); 
+});
 
 function getConfig(configStr) { try { return JSON.parse(Buffer.from(configStr, "base64").toString()); } catch { return {}; } }
 function withTimeout(promise, ms) { return Promise.race([promise, new Promise(r => setTimeout(() => r([]), ms))]); }
 
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`🚀 Leviathan (Corsaro) v30.2 (Multi-Debrid) attivo su porta ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Leviathan (Corsaro) v30.3 (Multi-Debrid) attivo su porta ${PORT}`));
