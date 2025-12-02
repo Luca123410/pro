@@ -1,39 +1,51 @@
 const axios = require("axios");
+const Database = require("better-sqlite3");
+const path = require("path");
+const fs = require("fs-extra");
 
 // --- ⚙️ CONFIGURAZIONE API (GOD MODE) ⚙️ ---
 const CONFIG = {
-    // 🟢 TMDB (Primario - Veloce e Gratis)
-    TMDB_KEY: '4b9dfb8b1c9f1720b5cd1d7efea1d845', 
+    TMDB_KEY: '4b9dfb8b1c9f1720b5cd1d7efea1d845',
     TMDB_URL: 'https://api.themoviedb.org/3',
-    
-    // 🟡 TRAKT (Il tuo Client ID inserito correttamente)
-    // Questo permette allo script di trovare Anime e Serie TV difficili
-    TRAKT_CLIENT_ID: 'ad521cf009e68d4304eeb82edf0e5c918055eef47bf38c8d568f6a9d8d6da4d1', 
-    TRAKT_URL: 'https://api.trakt.tv', // NON TOCCARE: Questo è l'indirizzo per il codice, anche se nel browser non va.
-    
-    // 🔴 OMDB (Emergency Fallback)
-    // Se non hai una chiave OMDB, lascia vuoto.
+    TRAKT_CLIENT_ID: 'ad521cf009e68d4304eeb82edf0e5c918055eef47bf38c8d568f6a9d8d6da4d1',
+    TRAKT_URL: 'https://api.trakt.tv',
     OMDB_KEY: 'cbd03c31', 
     OMDB_URL: 'http://www.omdbapi.com',
 };
 
-// --- 🧠 SMART CACHE SYSTEM ---
-// Memorizza l'intera "Identity Card" del media per 48 ore
-const metaCache = new Map();
+// --- 💾 DATABASE PERSISTENTE (SQLITE) ---
+// Ispirato alla robustezza del "DatabaseManager" Python
+const DATA_DIR = path.join(__dirname, 'data');
+fs.ensureDirSync(DATA_DIR); // Crea la cartella se non esiste
 
-function getFromCache(key) {
-    if (metaCache.has(key)) return metaCache.get(key);
-    return null;
-}
+const dbPath = path.join(DATA_DIR, 'ids_cache.db');
+const db = new Database(dbPath); // Sincrono e velocissimo
 
-function saveToCache(ids) {
-    // Salva referenze incrociate per lookup istantaneo futuro
-    if (ids.imdb) metaCache.set(`imdb:${ids.imdb}`, ids);
-    if (ids.tmdb) metaCache.set(`tmdb:${ids.tmdb}:${ids.type || 'movie'}`, ids);
-    
-    // Pulizia periodica (Anti-Leak)
-    if (metaCache.size > 5000) metaCache.clear();
-}
+// Attiviamo la modalità WAL per prestazioni estreme
+db.pragma('journal_mode = WAL');
+
+// Creazione Tabella (Se non esiste)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS media_map (
+    imdb_id TEXT PRIMARY KEY,
+    tmdb_id INTEGER,
+    tvdb_id INTEGER,
+    trakt_id INTEGER,
+    type TEXT,
+    slug TEXT,
+    timestamp INTEGER
+  );
+  
+  CREATE INDEX IF NOT EXISTS idx_tmdb ON media_map(tmdb_id);
+`);
+
+// Prepared Statements (Query Precompilate per velocità)
+const stmtGetByImdb = db.prepare('SELECT * FROM media_map WHERE imdb_id = ?');
+const stmtGetByTmdb = db.prepare('SELECT * FROM media_map WHERE tmdb_id = ?');
+const stmtInsert = db.prepare(`
+    INSERT OR REPLACE INTO media_map (imdb_id, tmdb_id, tvdb_id, trakt_id, type, slug, timestamp)
+    VALUES (@imdb, @tmdb, @tvdb, @trakt, @type, @slug, @timestamp)
+`);
 
 // --- ⚡ AXIOS CLIENTS ---
 const tmdbClient = axios.create({ baseURL: CONFIG.TMDB_URL, timeout: 4000 });
@@ -48,10 +60,10 @@ const traktClient = axios.create({
 });
 const omdbClient = axios.create({ baseURL: CONFIG.OMDB_URL, timeout: 4000 });
 
-/**
- * 🕵️‍♂️ CORE: TMDB FINDER
- * Cerca ID esterni usando TMDB (Il metodo più veloce)
- */
+// ==========================================
+// 🕵️‍♂️ LOGICA DI RICERCA ESTERNA
+// ==========================================
+
 async function searchTmdb(id, source = 'imdb_id') {
     try {
         const url = `/find/${id}?api_key=${CONFIG.TMDB_KEY}&external_source=${source}`;
@@ -65,7 +77,7 @@ async function searchTmdb(id, source = 'imdb_id') {
         if (res) {
             return {
                 tmdb: res.id,
-                imdb: source === 'imdb_id' ? id : null, 
+                imdb: source === 'imdb_id' ? id : null,
                 type: res._type === 'tv' ? 'series' : res._type,
                 foundVia: 'tmdb'
             };
@@ -86,14 +98,9 @@ async function getTmdbExternalIds(tmdbId, type) {
     } catch (e) { return {}; }
 }
 
-/**
- * 🌉 BRIDGE: TRAKT FINDER (Anime & Series Specialist)
- */
 async function searchTrakt(id, type = 'imdb') {
     if (!CONFIG.TRAKT_CLIENT_ID) return null;
-    
     try {
-        // Trakt cerca specificamente per tipo ID (imdb, tmdb, tvdb)
         const url = `/search/${type}/${id}?type=movie,show`;
         const { data } = await traktClient.get(url);
         
@@ -110,15 +117,10 @@ async function searchTrakt(id, type = 'imdb') {
                 foundVia: 'trakt'
             };
         }
-    } catch (e) { 
-        // console.log("Trakt Error:", e.message); // Debug se serve
-    }
+    } catch (e) { }
     return null;
 }
 
-/**
- * 🆘 FALLBACK: OMDb FINDER
- */
 async function searchOmdb(imdbId) {
     if (!CONFIG.OMDB_KEY) return null;
     try {
@@ -130,36 +132,48 @@ async function searchOmdb(imdbId) {
                 foundVia: 'omdb'
             };
         }
-    } catch (e) { /* Silent fail */ }
+    } catch (e) { }
     return null;
 }
 
 // ==========================================
-// 🛠️ FUNZIONI PUBBLICHE 🛠️
+// 🛠️ FUNZIONE CORE (DB MANAGER)
 // ==========================================
 
-/**
- * Ottiene TUTTI gli ID disponibili per un dato input.
- */
-async function getAllIds(id, typeHint = null) {
+async function resolveIds(id, typeHint = null) {
     const isImdb = id.toString().startsWith('tt');
-    const cleanId = id.toString().split(':')[0]; 
+    const cleanId = id.toString().split(':')[0]; // Rimuove :season:episode se presente
 
-    // 1. CACHE CHECK
-    const cacheKey = isImdb ? `imdb:${cleanId}` : `tmdb:${cleanId}:${typeHint || 'movie'}`;
-    const cached = getFromCache(cacheKey);
-    if (cached) return cached;
+    // 1. 💾 DB CHECK (Lettura immediata)
+    let cached = null;
+    try {
+        cached = isImdb ? stmtGetByImdb.get(cleanId) : stmtGetByTmdb.get(cleanId);
+    } catch (err) { console.error("DB Read Error:", err); }
 
+    if (cached) {
+        // Riformatta come oggetto pulito
+        return {
+            imdb: cached.imdb_id,
+            tmdb: cached.tmdb_id,
+            tvdb: cached.tvdb_id,
+            trakt: cached.trakt_id,
+            type: cached.type,
+            foundVia: 'sqlite_db'
+        };
+    }
+
+    // 2. 🌍 LIVE SEARCH (Se non è nel DB)
     let identity = { 
-        input: cleanId, 
         imdb: isImdb ? cleanId : null, 
         tmdb: !isImdb ? parseInt(cleanId) : null,
         tvdb: null,
+        trakt: null,
+        slug: null,
         type: typeHint
     };
 
-    // 2. TMDB LOOKUP (Primario)
-    if (isImdb) {
+    // A. TMDB Primary Search
+    if (isImdb && !identity.tmdb) {
         const tmdbRes = await searchTmdb(cleanId, 'imdb_id');
         if (tmdbRes) {
             identity.tmdb = tmdbRes.tmdb;
@@ -167,51 +181,71 @@ async function getAllIds(id, typeHint = null) {
         }
     }
 
+    // B. Expand details with TMDB External IDs
     if (identity.tmdb) {
         const ext = await getTmdbExternalIds(identity.tmdb, identity.type || 'movie');
-        identity = { ...identity, ...ext }; 
+        identity = { ...identity, ...ext };
     }
 
-    // 3. TRAKT FALLBACK (Il tuo Client ID entra in gioco qui!)
+    // C. Trakt Fallback (Cruciale per Anime/Serie complesse)
     if ((!identity.tmdb || !identity.imdb) && CONFIG.TRAKT_CLIENT_ID) {
         const traktRes = await searchTrakt(cleanId, isImdb ? 'imdb' : 'tmdb');
         if (traktRes) {
-            console.log(`🦅 Trakt Rescue: Recuperati metadati per ${cleanId}`);
-            identity = { ...identity, ...traktRes }; 
+            // console.log(`🦅 Trakt Rescue: ${cleanId}`);
+            identity = { ...identity, ...traktRes };
         }
     }
 
-    // 4. OMDB FALLBACK
+    // D. OMDB Last Resort
     if (isImdb && !identity.tmdb && CONFIG.OMDB_KEY) {
         const omdbRes = await searchOmdb(cleanId);
         if (omdbRes) identity = { ...identity, ...omdbRes };
     }
 
-    // Salva in cache
-    if (identity.tmdb || identity.imdb) {
-        saveToCache(identity);
+    // 3. 💾 SAVE TO DB (Scrittura Persistente)
+    // Salviamo solo se abbiamo almeno una coppia solida (IMDB+TMDB) o (IMDB solo)
+    if (identity.imdb) {
+        try {
+            stmtInsert.run({
+                imdb: identity.imdb,
+                tmdb: identity.tmdb || null,
+                tvdb: identity.tvdb || null,
+                trakt: identity.trakt || null,
+                type: identity.type || 'movie',
+                slug: identity.slug || null,
+                timestamp: Date.now()
+            });
+            // console.log(`💾 Saved to DB: ${identity.imdb} <-> ${identity.tmdb}`);
+        } catch (err) { console.error("DB Write Error:", err.message); }
     }
 
     return identity;
 }
 
-// Wrapper per compatibilità con addon.js
+// ==========================================
+// 🔌 EXPORT PUBBLICI
+// ==========================================
+
 async function tmdbToImdb(tmdbId, type) {
-    const ids = await getAllIds(tmdbId, type);
+    const ids = await resolveIds(tmdbId, type);
     if (ids.imdb) {
-        console.log(`✅ TMDb ${tmdbId} → IMDb ${ids.imdb} [via ${ids.foundVia || 'cache'}]`);
+        console.log(`✅ TMDb ${tmdbId} → IMDb ${ids.imdb} [via ${ids.foundVia || 'web'}]`);
         return ids.imdb;
     }
     return null;
 }
 
 async function imdbToTmdb(imdbId) {
-    const ids = await getAllIds(imdbId);
+    const ids = await resolveIds(imdbId);
     if (ids.tmdb) {
-        console.log(`✅ IMDb ${imdbId} → TMDb ${ids.tmdb} [via ${ids.foundVia || 'cache'}]`);
+        console.log(`✅ IMDb ${imdbId} → TMDb ${ids.tmdb} [via ${ids.foundVia || 'web'}]`);
         return { tmdbId: ids.tmdb, type: ids.type };
     }
     return { tmdbId: null, type: null };
+}
+
+async function getAllIds(id) {
+    return await resolveIds(id);
 }
 
 module.exports = {
