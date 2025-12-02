@@ -1,5 +1,5 @@
 // Corsaro Brain - HYPER FAST EDITION
-// Versione: 29.0.0-INTELLIGENT-CORE
+// Versione: 29.0.1-CORSARO-FIX
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -114,8 +114,8 @@ function isSafeForItalian(item) {
     /\b(MULTI|MUII|MUL|MULTILANGUAGE)\b.*\b(ITA|IT|ITALIAN)\b/,
     /\b(AC3|DTS).*\b(ITA|IT|ITALIAN)\b/, 
     /\b(SUB.?ITA|SUBS.?ITA|SOTTOTITOLI.?ITA)\b/,
-    /\b(VC[._-]?I|VO.?ITA|AUD.?ITA)\b/,           
-    /\b(ITA.?ENG)\b/,                             
+    /\b(VC[._-]?I|VO.?ITA|AUD.?ITA)\b/,            
+    /\b(ITA.?ENG)\b/,                      
     /ITALIAN.*(DL|Mux|WEBRip|BluRay)/i,
     // Aggiunti pattern extra per sicurezza
     /\b(SPEEDVIDEO|WMS|TRIDIM|iDN_CreW)\b/
@@ -173,12 +173,18 @@ function extractStreamInfo(title, source) {
   if (/5\.1/.test(t)) audioTags.push("5.1");
 
   let lang = "🇬🇧 ENG"; 
-  if (/\b(ita|italian|it)\b/i.test(t)) {
+  
+  // --- MODIFICA RICHIESTA: Se Corsaro -> ITA ---
+  if (source === "Corsaro") {
+      lang = "🇮🇹 ITA";
+      if (/multi|mui/i.test(t)) lang = "🇮🇹 MULTI";
+  } 
+  else if (/\b(ita|italian|it)\b/i.test(t)) {
       lang = "🇮🇹 ITA";
   } else if (/multi|mui/i.test(t)) {
-      if (source === "Corsaro") lang = "🇮🇹 MULTI"; 
-      else lang = "🌐 MULTI"; 
+      lang = "🌐 MULTI"; 
   }
+  // --------------------------------------------
 
   let detailsParts = [];
   if (videoTags.length) detailsParts.push(`✨ ${videoTags.join(" ")}`);
@@ -475,4 +481,4 @@ function getConfig(configStr) { try { return JSON.parse(Buffer.from(configStr, "
 function withTimeout(promise, ms) { return Promise.race([promise, new Promise(r => setTimeout(() => r([]), ms))]); }
 
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`🚀 Corsaro Brain v29.0.0 (Smart Core) su porta ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Corsaro Brain v29.0.1 (Corsaro FIX) su porta ${PORT}`));
