@@ -65,7 +65,7 @@ function parseSize(sizeStr) {
   return val * (mult[unit] || 1);
 }
 
-// ** SMART MATCHING (Seconda Barriera) **
+// ** SMART MATCHING 2.0 (Fix per "IT: Welcome to Derry") **
 function isTitleSafe(metaTitle, filename) {
   const clean = (str) => String(str).toLowerCase()
     .replace(/\b(dr\.|doctor|m\.d\.|md|us|uk|20\d{2})\b/g, "") 
@@ -75,15 +75,25 @@ function isTitleSafe(metaTitle, filename) {
   const q = clean(metaTitle);
   const f = clean(filename);
 
+  // Eccezione specifica per House MD
   if (q === "house") {
       if (f.includes("dragon") || f.includes("cards") || f.includes("guinness") || f.includes("full house")) return false;
       if (f.includes("dr") || f.includes("md") || f.includes("medical")) return true;
   }
 
-  const words = q.split(/\s+/);
+  // 🔥 FIX INTELLIGENTE: Divide le parole e ignora quelle "inutili" se il titolo è lungo
+  let words = q.split(/\s+/);
+  
+  // Se il titolo ha più di una parola, ignoriamo "it", "the", "a", "an" dal controllo obbligatorio
+  // Questo permette a "Welcome to Derry" di matchare con "IT Welcome to Derry"
+  if (words.length > 1) {
+      words = words.filter(w => !["it", "the", "a", "an", "le", "la", "il", "lo"].includes(w));
+  }
+
   const allWordsFound = words.every(w => new RegExp(`\\b${w}\\b`, 'i').test(f));
   if (allWordsFound) return true;
 
+  // Fuzzy Match come ultima spiaggia
   if (q.length > 5) {
       try {
         const fs = FuzzySet([q]);
@@ -421,7 +431,6 @@ async function generateStream(type, id, config, userConfStr) {
   return { streams }; 
 }
 
-// FUNZIONE CLASSIFICA AGGIORNATA PER EVITARE I PACK QUANDO SERVE EPISODIO
 function rankAndFilterResults(results, meta) {
   return results.map(item => {
     const info = extractStreamInfo(item.title, item.source);
@@ -435,23 +444,8 @@ function rankAndFilterResults(results, meta) {
     
     if (item.source === "Corsaro") score += 1000;
 
-    // --- FIX SERIE TV ---
-    if (meta.isSeries) {
-        const sStr = String(meta.season).padStart(2, '0');
-        const eStr = String(meta.episode).padStart(2, '0');
-        
-        // Regex stretta per l'episodio esatto (es. S01E05)
-        const exactEpRegex = new RegExp(`S${sStr}[^0-9]*E${eStr}`, "i");
-        const xEpRegex = new RegExp(`${meta.season}x${eStr}`, "i");
-
-        if (exactEpRegex.test(item.title) || xEpRegex.test(item.title)) {
-            score += 5000; // SUPER BOOST per l'episodio esatto
-        } else if (/pack|stagione|season/i.test(item.title)) {
-            // Se è un pack e stiamo cercando un episodio, penalizzalo pesantemente
-            // così se ci sono episodi singoli, vinceranno sempre loro.
-            score -= 2000; 
-        }
-    }
+    // Bonus per match esatto episodio (se il motore lo ha trovato)
+    if (meta.isSeries && new RegExp(`S${String(meta.season).padStart(2,'0')}E${String(meta.episode).padStart(2,'0')}`, "i").test(item.title)) score += 1500;
     
     if (/cam|ts/i.test(item.title)) score -= 10000;
     
