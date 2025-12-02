@@ -1,5 +1,5 @@
-// Corsaro Brain - HYPER FAST EDITION
-// Versione: 29.0.1-CORSARO-FIX
+// Corsaro Brain - HYPER FAST EDITION (Multi-Debrid)
+// Versione: 30.1.0-ORGANIZED
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -9,44 +9,44 @@ const Bottleneck = require("bottleneck");
 const FuzzySet = require("fuzzyset");
 
 // 🔥 IMPORTIAMO IL CONVERTITORE 🔥
-// Assicurati che il file id_converter.js esista nella stessa cartella
 const { tmdbToImdb } = require("./id_converter");
 
-// --- CONFIGURAZIONE HYPER FAST ---
+// 🔥 IMPORTIAMO I MODULI DEBRID (DALLA CARTELLA DEDICATA) 🔥
+const RD = require("./debrid/realdebrid");
+const AD = require("./debrid/alldebrid");
+const TB = require("./debrid/torbox");
+
+// --- CONFIGURAZIONE ---
 const CONFIG = {
   CINEMETA_URL: "https://v3-cinemeta.strem.io",
-  REAL_SIZE_FILTER: 80 * 1024 * 1024, // Filtra file < 80MB (spazzatura)
+  REAL_SIZE_FILTER: 80 * 1024 * 1024, 
   TIMEOUT_TMDB: 1500,
-  SCRAPER_TIMEOUT: 6000, // 6s totali per dare tempo ai motori (che ne usano 5.5)
+  SCRAPER_TIMEOUT: 6000, 
   MAX_RESULTS: 40, 
   FUZZY_THRESHOLD: 0.6,
 };
 
-// --- LIMITERS ESTREMI ---
+// --- LIMITERS ---
 const LIMITERS = {
   scraper: new Bottleneck({ maxConcurrent: 40, minTime: 10 }), 
   rd: new Bottleneck({ maxConcurrent: 25, minTime: 40 }), 
 };
 
-// --- MODULI SCRAPER  ---
+// --- MOTORI DI RICERCA ---
 const SCRAPER_MODULES = [
-  require("./rd"),     // Modulo RealDebrid (cache check)
-  require("./engines") // 🔥 IL TUO NUOVO MOTORE POTENZIATO
+  require("./engines") 
 ];
 
 const FALLBACK_SCRAPERS = [
-  require("./external"), // Fallback se non trova nulla
+  require("./external"),
 ];
 
-// --- APP ---
 const app = express();
-app.use(helmet({
-  contentSecurityPolicy: false, 
-}));
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 app.use(express.static(path.join(__dirname, "public")));
 
-// --- UTILITIES  ---
+// --- UTILITIES ---
 const UNITS = ["B", "KB", "MB", "GB", "TB"];
 function formatBytes(bytes) {
   if (!+bytes) return "0 B";
@@ -65,7 +65,7 @@ function parseSize(sizeStr) {
   return val * (mult[unit] || 1);
 }
 
-// ** SMART MATCHING 2.0 (Fix per "IT: Welcome to Derry") **
+// ** SMART MATCHING **
 function isTitleSafe(metaTitle, filename) {
   const clean = (str) => String(str).toLowerCase()
     .replace(/\b(dr\.|doctor|m\.d\.|md|us|uk|20\d{2})\b/g, "") 
@@ -75,17 +75,12 @@ function isTitleSafe(metaTitle, filename) {
   const q = clean(metaTitle);
   const f = clean(filename);
 
-  // Eccezione specifica per House MD
   if (q === "house") {
       if (f.includes("dragon") || f.includes("cards") || f.includes("guinness") || f.includes("full house")) return false;
       if (f.includes("dr") || f.includes("md") || f.includes("medical")) return true;
   }
 
-  // 🔥 FIX INTELLIGENTE: Divide le parole e ignora quelle "inutili" se il titolo è lungo
   let words = q.split(/\s+/);
-  
-  // Se il titolo ha più di una parola, ignoriamo "it", "the", "a", "an" dal controllo obbligatorio
-  // Questo permette a "Welcome to Derry" di matchare con "IT Welcome to Derry"
   if (words.length > 1) {
       words = words.filter(w => !["it", "the", "a", "an", "le", "la", "il", "lo"].includes(w));
   }
@@ -93,7 +88,6 @@ function isTitleSafe(metaTitle, filename) {
   const allWordsFound = words.every(w => new RegExp(`\\b${w}\\b`, 'i').test(f));
   if (allWordsFound) return true;
 
-  // Fuzzy Match come ultima spiaggia
   if (q.length > 5) {
       try {
         const fs = FuzzySet([q]);
@@ -104,11 +98,9 @@ function isTitleSafe(metaTitle, filename) {
   return false;
 }
 
-// 🔥🔥 FILTRO SEVERO (Seconda Barriera) 🔥🔥
 function isSafeForItalian(item) {
   if (!item || !item.title) return false;
   const t = item.title.toUpperCase();
-  
   const itaPatterns = [
     /\b(ITA|ITALIAN|IT|ITL|ITALY)\b/,
     /\b(MULTI|MUII|MUL|MULTILANGUAGE)\b.*\b(ITA|IT|ITALIAN)\b/,
@@ -117,14 +109,11 @@ function isSafeForItalian(item) {
     /\b(VC[._-]?I|VO.?ITA|AUD.?ITA)\b/,            
     /\b(ITA.?ENG)\b/,                      
     /ITALIAN.*(DL|Mux|WEBRip|BluRay)/i,
-    // Aggiunti pattern extra per sicurezza
     /\b(SPEEDVIDEO|WMS|TRIDIM|iDN_CreW)\b/
   ];
-  
   return itaPatterns.some(p => p.test(t));
 }
 
-// --- VISUALS ---
 function cleanFilename(filename) {
   if (!filename) return "";
   const yearMatch = filename.match(/(19|20)\d{2}/);
@@ -173,8 +162,6 @@ function extractStreamInfo(title, source) {
   if (/5\.1/.test(t)) audioTags.push("5.1");
 
   let lang = "🇬🇧 ENG"; 
-  
-  // --- MODIFICA RICHIESTA: Se Corsaro -> ITA ---
   if (source === "Corsaro") {
       lang = "🇮🇹 ITA";
       if (/multi|mui/i.test(t)) lang = "🇮🇹 MULTI";
@@ -184,7 +171,6 @@ function extractStreamInfo(title, source) {
   } else if (/multi|mui/i.test(t)) {
       lang = "🌐 MULTI"; 
   }
-  // --------------------------------------------
 
   let detailsParts = [];
   if (videoTags.length) detailsParts.push(`✨ ${videoTags.join(" ")}`);
@@ -193,12 +179,12 @@ function extractStreamInfo(title, source) {
   return { quality: q, qIcon, info: detailsParts.join(" • "), lang };
 }
 
-function formatStreamTitleCinePro(fileTitle, source, size, seeders) {
+function formatStreamTitleCinePro(fileTitle, source, size, seeders, serviceTag = "RD") {
     const { quality, qIcon, info, lang } = extractStreamInfo(fileTitle, source);
     const sizeStr = size ? `📦 ${formatBytes(size)}` : "📦 ❓"; 
     const seedersStr = seeders ? `👤 ${seeders}` : "";
 
-    const name = `[RD ${qIcon} ${quality}] ${source}`;
+    const name = `[${serviceTag} ${qIcon} ${quality}] ${source}`;
     const detailLines = [];
 
     let cleanName = cleanFilename(fileTitle)
@@ -227,42 +213,31 @@ function formatStreamTitleCinePro(fileTitle, source, size, seeders) {
     return { name, title: fullTitle };
 }
 
-// ** QUERY SERIES BOOSTED **
 function buildSeriesQueries(meta) {
   const { title, originalTitle: orig, season: s, episode: e } = meta;
   const ss = String(s).padStart(2, "0");
   const ee = String(e).padStart(2, "0");
-  
   let queries = new Set();
-  
-  // Query specifica prioritaria
   queries.add(`${title} S${ss}E${ee}`);
-  
-  // Varianti
   queries.add(`${title} S${ss}`); 
-
   if (title.toLowerCase().includes("house")) {
       queries.add(`Dr House S${ss}E${ee}`);
       queries.add(`Dr House S${ss}`);
       queries.add(`House MD S${ss}E${ee}`);
   }
-
   if (orig && orig !== title) {
     queries.add(`${orig} S${ss}E${ee}`);
     queries.add(`${orig} S${ss}`);
   }
   queries.add(`${title} ${s}x${ee}`);
-
   queries.add(`${title} Stagione ${s} ITA`);
   queries.add(`${title} Stagione ${s} COMPLETE`);
   queries.add(`${title} Stagione ${s} PACK`);
   queries.add(`${title} Season ${s} ITA`);
-  
   if (orig && orig !== title) {
     queries.add(`${orig} Stagione ${s} ITA`);
     queries.add(`${orig} Season ${s} ITA`);
   }
-
   return [...queries];
 }
 
@@ -273,21 +248,18 @@ function buildMovieQueries(meta) {
   return q.filter(Boolean);
 }
 
-// Questa funzione ora si aspetta quasi sempre un ID IMDb valido
 async function getMetadata(id, type) {
   try {
     let tmdbId = id, s = 1, e = 1;
-    // Se è serie, l'ID è del tipo "tt12345:1:5"
     if (type === "series" && id.includes(":")) [tmdbId, s, e] = id.split(":");
     
-    // Cinemeta lavora bene con tt12345
     const { data: cData } = await axios.get(`${CONFIG.CINEMETA_URL}/meta/${type}/${tmdbId.split(":")[0]}.json`, { timeout: CONFIG.TIMEOUT_TMDB }).catch(() => ({ data: {} }));
     
     return cData?.meta ? {
       title: cData.meta.name,
       originalTitle: cData.meta.name,
       year: cData.meta.year?.split("–")[0],
-      imdb_id: tmdbId.split(":")[0], // ID base per i metadati
+      imdb_id: tmdbId.split(":")[0], 
       isSeries: type === "series",
       season: parseInt(s),
       episode: parseInt(e)
@@ -295,49 +267,78 @@ async function getMetadata(id, type) {
   } catch { return null; }
 }
 
-// 🔥 FUNZIONE PRINCIPALE MODIFICATA PER GESTIRE TMDB E SMART ENGINE 🔥
+// 🔥 ROUTER DEBRID INTELLIGENTE 🔥
+async function resolveDebridLink(config, item, showFake) {
+    try {
+        const service = config.service || 'rd'; // Default RD
+        const apiKey = config.key || config.rd; // Compatibilità
+        
+        if (!apiKey) return null;
+
+        let streamData = null;
+
+        // Routing del servizio
+        if (service === 'rd') {
+            streamData = await RD.getStreamLink(apiKey, item.magnet, item.season, item.episode);
+        } else if (service === 'ad') {
+            streamData = await AD.getStreamLink(apiKey, item.magnet, item.season, item.episode);
+        } else if (service === 'tb') {
+            streamData = await TB.getStreamLink(apiKey, item.magnet, item.season, item.episode);
+        }
+
+        if (!streamData || (streamData.type === "ready" && streamData.size < CONFIG.REAL_SIZE_FILTER)) return null;
+
+        let serviceTag = "RD";
+        if (service === 'ad') serviceTag = "AD";
+        if (service === 'tb') serviceTag = "TB";
+
+        const { name, title } = formatStreamTitleCinePro(streamData.filename || item.title, item.source, streamData.size || item.size, item.seeders, serviceTag);
+        
+        return { 
+            name, 
+            title, 
+            url: streamData.url, 
+            behaviorHints: { notWebReady: false, bingieGroup: `corsaro-${service}` } 
+        };
+
+    } catch (e) {
+        if (showFake) return { name: `[P2P ⚠️]`, title: `${item.title}\n⚠️ Cache Assente`, url: item.magnet, behaviorHints: { notWebReady: true } };
+        return null;
+    }
+}
+
+// 🔥 FUNZIONE PRINCIPALE GENERATE STREAM 🔥
 async function generateStream(type, id, config, userConfStr) {
-  if (!config.rd) return { streams: [{ name: "⚠️ CONFIG", title: "Serve RealDebrid API Key" }] };
+  if (!config.key && !config.rd) return { streams: [{ name: "⚠️ CONFIG", title: "Inserisci API Key nel configuratore" }] };
   
-  let finalId = id; // Default: usiamo l'ID in ingresso (es. tt12345:1:5 o tt12345)
+  let finalId = id; 
   
-  // 1. RILEVAMENTO TMDB (es. tmdb:12345 o tmdb:12345:1:5)
+  // 1. RILEVAMENTO TMDB 
   if (id.startsWith("tmdb:")) {
-      console.log(`\n🕵️ Rilevato ID TMDB: ${id}`);
       try {
           const parts = id.split(":");
           const tmdbId = parts[1];
-          // Chiamata al convertitore esterno
           const imdbId = await tmdbToImdb(tmdbId, type);
           
           if (imdbId) {
-              // Ricostruzione ID in formato IMDb compatibile con Stremio
               if (type === "series" && parts.length >= 4) {
                   const s = parts[2];
                   const e = parts[3];
-                  // ID COMPLETO per il motore Smart (tt12345:1:5)
                   finalId = `${imdbId}:${s}:${e}`; 
               } else {
-                  finalId = imdbId; // Esempio: tt12345
+                  finalId = imdbId; 
               }
-              console.log(`✅ Convertito con successo: TMDB ${tmdbId} -> IMDB ${finalId}`);
-          } else {
-              console.log(`⚠️ Impossibile convertire TMDB ${tmdbId}. Procedo con ID originale.`);
-          }
-      } catch (err) {
-          console.error("❌ Errore critico durante la conversione ID:", err.message);
-      }
+          } 
+      } catch (err) { console.error("ID Convert Error"); }
   }
 
-  // 2. RECUPERO METADATI (Usa finalId, che ora è preferibilmente un tt...)
   const meta = await getMetadata(finalId, type); 
-  
   if (!meta) return { streams: [] };
   
   const queries = meta.isSeries ? buildSeriesQueries(meta) : buildMovieQueries(meta);
   const onlyIta = config.filters?.onlyIta !== false;
 
-  console.log(`\n🔎 CERCO: "${meta.title}" [${meta.year}] (ID: ${finalId})`);
+  console.log(`\n🔎 [${config.service || 'rd'}] CERCO: "${meta.title}" (ID: ${finalId})`);
 
   let promises = [];
   queries.forEach(q => {
@@ -345,9 +346,7 @@ async function generateStream(type, id, config, userConfStr) {
       if (scraper.searchMagnet) {
         promises.push(
           LIMITERS.scraper.schedule(() => 
-            // 🔥 MODIFICA CRUCIALE: Passiamo finalId (con :s:e) al motore 🔥
-            withTimeout(scraper.searchMagnet(q, meta.year, type, finalId), CONFIG.SCRAPER_TIMEOUT)
-            .catch(err => [])
+            withTimeout(scraper.searchMagnet(q, meta.year, type, finalId), CONFIG.SCRAPER_TIMEOUT).catch(err => [])
           )
         );
       }
@@ -355,74 +354,43 @@ async function generateStream(type, id, config, userConfStr) {
   });
 
   let resultsRaw = (await Promise.all(promises)).flat();
-  console.log(`📥 TOTALE GREZZI DAL MOTORE: ${resultsRaw.length}`);
 
-  // Filtro "Seconda Barriera" (nel caso il motore lasci passare qualcosa di strano)
   resultsRaw = resultsRaw.filter(item => {
     if (!item?.magnet) return false;
     if (!isTitleSafe(meta.title, item.title)) return false;
     if (onlyIta && !isSafeForItalian(item)) return false;
-    
-    // Per le serie, il motore fa già il lavoro sporco su S/E, 
-    // ma qui manteniamo un controllo di sicurezza sui Pack.
     return true;
   });
 
-  // 🔥 FALLBACK EXTERNAL (con Timeout gestito) 🔥
   if (resultsRaw.length <= 5) {
-    console.log(`⚠️ Risultati scarsi (${resultsRaw.length}). Attivo External (ID Search)...`);
-    
     const extPromises = FALLBACK_SCRAPERS.map(fb => {
         return LIMITERS.scraper.schedule(async () => {
             try {
-                // Passiamo finalId anche qui
                 return await withTimeout(fb.searchMagnet(queries[0], meta.year, type, finalId), CONFIG.SCRAPER_TIMEOUT);
-            } catch (err) {
-                console.log(`❌ External Error: ${err.message}`);
-                return [];
-            }
+            } catch (err) { return []; }
         });
     });
 
     try {
         let timeoutHandle;
         const timeoutPromise = new Promise(resolve => {
-            timeoutHandle = setTimeout(() => {
-                console.log("⏰ External Search TEMPO SCADUTO");
-                resolve([]);
-            }, CONFIG.SCRAPER_TIMEOUT + 1500); 
+            timeoutHandle = setTimeout(() => { resolve([]); }, CONFIG.SCRAPER_TIMEOUT + 1500); 
         });
-
-        const searchPromise = Promise.all(extPromises).then(res => {
-            clearTimeout(timeoutHandle);
-            return res;
-        });
-
+        const searchPromise = Promise.all(extPromises).then(res => { clearTimeout(timeoutHandle); return res; });
         const extResultsRaw = await Promise.race([searchPromise, timeoutPromise]);
-
-        if (Array.isArray(extResultsRaw)) {
-             const extFlat = extResultsRaw.flat();
-             console.log(`✅ External ha trovato: ${extFlat.length} nuovi risultati`);
-             resultsRaw = [...resultsRaw, ...extFlat];
-        }
-    } catch (e) {
-        console.log("❌ Errore critico nel blocco External:", e.message);
-    }
+        if (Array.isArray(extResultsRaw)) resultsRaw = [...resultsRaw, ...extResultsRaw.flat()];
+    } catch (e) {}
   }
 
   const seen = new Set(); 
   let cleanResults = [];
-  
-  // Pulizia finale duplicati
   for (const item of resultsRaw) {
     if (!item || !item.magnet) continue;
     try {
         const hashMatch = item.magnet.match(/btih:([a-f0-9]{40})/i);
         const hash = hashMatch ? hashMatch[1].toUpperCase() : item.magnet;
-        
         if (seen.has(hash)) continue;
         seen.add(hash);
-        
         item._size = parseSize(item.size || item.sizeBytes);
         cleanResults.push(item);
     } catch (err) { continue; }
@@ -431,9 +399,15 @@ async function generateStream(type, id, config, userConfStr) {
 
   const ranked = rankAndFilterResults(cleanResults, meta).slice(0, CONFIG.MAX_RESULTS);
   
-  const rdPromises = ranked.map(item => LIMITERS.rd.schedule(() => resolveRdLinkOptimized(config.rd, item, config.filters?.showFake)));
-  const streams = (await Promise.all(rdPromises)).filter(Boolean);
+  // Risoluzione Link (Multi-Service)
+  const rdPromises = ranked.map(item => {
+      // Passiamo metadati S/E all'item per i moduli AD/TB
+      item.season = meta.season;
+      item.episode = meta.episode;
+      return LIMITERS.rd.schedule(() => resolveDebridLink(config, item, config.filters?.showFake));
+  });
   
+  const streams = (await Promise.all(rdPromises)).filter(Boolean);
   return { streams }; 
 }
 
@@ -441,39 +415,20 @@ function rankAndFilterResults(results, meta) {
   return results.map(item => {
     const info = extractStreamInfo(item.title, item.source);
     let score = 0;
-    
     if (info.lang.includes("ITA")) score += 5000;
     else if (info.lang.includes("MULTI")) score += 3000;
-    
     if (info.quality === "4K") score += 1200;
     else if (info.quality === "1080p") score += 800;
-    
     if (item.source === "Corsaro") score += 1000;
-
-    // Bonus per match esatto episodio (se il motore lo ha trovato)
     if (meta.isSeries && new RegExp(`S${String(meta.season).padStart(2,'0')}E${String(meta.episode).padStart(2,'0')}`, "i").test(item.title)) score += 1500;
-    
     if (/cam|ts/i.test(item.title)) score -= 10000;
-    
     return { item, score };
   }).sort((a, b) => b.score - a.score).map(x => x.item);
 }
 
-async function resolveRdLinkOptimized(rdKey, item, showFake) {
-  try {
-    const streamData = await SCRAPER_MODULES[0].getStreamLink(rdKey, item.magnet);
-    if (!streamData || (streamData.type === "ready" && streamData.size < CONFIG.REAL_SIZE_FILTER)) return null;
-    const { name, title } = formatStreamTitleCinePro(streamData.filename || item.title, item.source, streamData.size || item.size);
-    return { name, title, url: streamData.url, behaviorHints: { notWebReady: false, bingieGroup: "corsaro-rd" } };
-  } catch (e) {
-    if (showFake) return { name: `[P2P ⚠️] ${item.source}`, title: `${item.title}\n⚠️ Cache RD Assente`, url: item.magnet, behaviorHints: { notWebReady: true } };
-    return null;
-  }
-}
-
 // --- ROUTES ---
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
-app.get("/:conf/manifest.json", (req, res) => { const m = { id: "org.corsaro.brain.v29.0", version: "29.0.0", name: "Corsaro Brain (Smart Core)", resources: ["catalog", "stream"], types: ["movie", "series"], catalogs: [] }; m.behaviorHints = { configurable: true, configurationRequired: false }; res.setHeader("Access-Control-Allow-Origin", "*"); res.json(m); });
+app.get("/:conf/manifest.json", (req, res) => { const m = { id: "org.corsaro.brain.v30.0", version: "30.0.0", name: "Corsaro Unleashed (Multi-Debrid)", resources: ["catalog", "stream"], types: ["movie", "series"], catalogs: [] }; m.behaviorHints = { configurable: true, configurationRequired: false }; res.setHeader("Access-Control-Allow-Origin", "*"); res.json(m); });
 app.get("/:conf/catalog/:type/:id/:extra?.json", async (req, res) => { res.setHeader("Access-Control-Allow-Origin", "*"); res.json({metas:[]}); });
 app.get("/:conf/stream/:type/:id.json", async (req, res) => { const result = await generateStream(req.params.type, req.params.id.replace(".json", ""), getConfig(req.params.conf), req.params.conf); res.setHeader("Access-Control-Allow-Origin", "*"); res.json(result); });
 
@@ -481,4 +436,4 @@ function getConfig(configStr) { try { return JSON.parse(Buffer.from(configStr, "
 function withTimeout(promise, ms) { return Promise.race([promise, new Promise(r => setTimeout(() => r([]), ms))]); }
 
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`🚀 Corsaro Brain v29.0.1 (Corsaro FIX) su porta ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Corsaro Unleashed v30.0 (Multi-Debrid) su porta ${PORT}`));
