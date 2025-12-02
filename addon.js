@@ -1,5 +1,5 @@
-// Corsaro Brain - HYPER FAST EDITION (Multi-Debrid)
-// Versione: 30.1.0-ORGANIZED
+// Corsaro Brain - LEVIATHAN EDITION (Multi-Debrid)
+// Versione: 30.2.0-LEVIATHAN
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -428,7 +428,27 @@ function rankAndFilterResults(results, meta) {
 
 // --- ROUTES ---
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
-app.get("/:conf/manifest.json", (req, res) => { const m = { id: "org.corsaro.brain.v30.0", version: "30.0.0", name: "Corsaro Unleashed (Multi-Debrid)", resources: ["catalog", "stream"], types: ["movie", "series"], catalogs: [] }; m.behaviorHints = { configurable: true, configurationRequired: false }; res.setHeader("Access-Control-Allow-Origin", "*"); res.json(m); });
+
+// 🔥 ROUTE MANIFEST - QUI DEFINIAMO L'ICONA E IL NOME 🔥
+app.get("/:conf/manifest.json", (req, res) => { 
+    const m = { 
+        id: "org.corsaro.brain.v30.2", 
+        version: "30.2.0", 
+        name: "Leviathan (Corsaro)", // Nuovo Nome
+        description: "Deep Sea Streaming Core | Multi-Debrid | ITA Priority", // Nuova Descrizione
+        
+        // 🐉 IL TUO LOGO DRAGO CIANO 🐉
+        logo: "https://img.icons8.com/ios-filled/500/00f2ea/dragon.png",
+        
+        resources: ["catalog", "stream"], 
+        types: ["movie", "series"], 
+        catalogs: [] 
+    }; 
+    m.behaviorHints = { configurable: true, configurationRequired: false }; 
+    res.setHeader("Access-Control-Allow-Origin", "*"); 
+    res.json(m); 
+});
+
 app.get("/:conf/catalog/:type/:id/:extra?.json", async (req, res) => { res.setHeader("Access-Control-Allow-Origin", "*"); res.json({metas:[]}); });
 app.get("/:conf/stream/:type/:id.json", async (req, res) => { const result = await generateStream(req.params.type, req.params.id.replace(".json", ""), getConfig(req.params.conf), req.params.conf); res.setHeader("Access-Control-Allow-Origin", "*"); res.json(result); });
 
@@ -436,4 +456,4 @@ function getConfig(configStr) { try { return JSON.parse(Buffer.from(configStr, "
 function withTimeout(promise, ms) { return Promise.race([promise, new Promise(r => setTimeout(() => r([]), ms))]); }
 
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`🚀 Corsaro Unleashed v30.0 (Multi-Debrid) su porta ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Leviathan (Corsaro) v30.2 (Multi-Debrid) attivo su porta ${PORT}`));
