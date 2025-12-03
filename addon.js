@@ -5,6 +5,7 @@
  * - Fix Ricerca Serie: Aggiunto anno alla query di ricerca.
  * - Fix Filtri: isTitleSafe reso più rigido per evitare falsi positivi.
  * - Removed: Codice SQL/Sequelize incompatibile.
+ * - Added: Supporto Kitsu (Anime)
  */
 
 const express = require("express");
@@ -17,6 +18,8 @@ const FuzzySet = require("fuzzyset");
 
 //  IMPORTIAMO IL CONVERTITORE
 const { tmdbToImdb } = require("./id_converter");
+//  IMPORTIAMO IL GESTORE KITSU (NUOVO)
+const kitsuHandler = require("./kitsu_handler");
 
 //  IMPORTIAMO I MODULI DEBRID
 const RD = require("./debrid/realdebrid");
@@ -381,6 +384,27 @@ async function generateStream(type, id, config, userConfStr) {
               console.log(`⚠️ ID Conversion Failed for ${tmdbId}`);
           }
       } catch (err) { console.error("ID Convert Error:", err.message); }
+  }
+
+  // 1.5 RILEVAMENTO KITSU (AGGIUNTO)
+  if (id.startsWith("kitsu:")) {
+      try {
+          const parts = id.split(":");
+          const kitsuId = parts[1];
+          const kitsuEp = parts[2] ? parseInt(parts[2]) : 1;
+          
+          const kData = await kitsuHandler(kitsuId);
+          
+          if (kData && kData.imdbID) {
+              console.log(`🦊 Kitsu Converted: ${kitsuId} -> ${kData.imdbID}`);
+              if (kData.type === 'series' || type === 'series') {
+                  const s = kData.season || 1; 
+                  finalId = `${kData.imdbID}:${s}:${kitsuEp}`;
+              } else {
+                  finalId = kData.imdbID;
+              }
+          }
+      } catch (err) { console.error("🦊 Kitsu Error:", err.message); }
   }
 
   const meta = await getMetadata(finalId, type); 
