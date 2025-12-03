@@ -174,7 +174,8 @@ async function searchCorsaro(title, year, type, reqSeason, reqEpisode) {
 
 async function searchKnaben(title, year, type, reqSeason, reqEpisode) {
     try {
-        const url = `https://knaben.org/search/${encodeURIComponent(clean(title))}/0/1/seeders`;
+        // MODIFICA: Aggiungiamo "ITA" direttamente nella query per Knaben
+        const url = `https://knaben.org/search/${encodeURIComponent(clean(title) + " ITA")}/0/1/seeders`;
         const { data } = await axios.get(url, { headers: COMMON_HEADERS, httpsAgent, timeout: TIMEOUT });
         const $ = cheerio.load(data);
         const results = [];
@@ -185,7 +186,12 @@ async function searchKnaben(title, year, type, reqSeason, reqEpisode) {
             const magnet = $(row).find('a[href^="magnet:"]').attr('href');
             const sizeStr = tds.eq(2).text().trim();
             const seeders = parseInt(tds.eq(4).text().trim()) || 0;
-            if (name && magnet && isItalianResult(name) && checkYear(name, year, type) && isCorrectFormat(name, reqSeason, reqEpisode)) {
+
+            // MODIFICA: Filtro Strict Mode per Knaben. Scarta se non c'è scritto "ITA" esplicitamente.
+            const upperName = name.toUpperCase();
+            const strictItaCheck = /\b(ITA|ITALIAN|ITALIANO|SUBITA|SUB-ITA)\b/.test(upperName);
+
+            if (name && magnet && strictItaCheck && checkYear(name, year, type) && isCorrectFormat(name, reqSeason, reqEpisode)) {
                 results.push({ title: name, magnet, size: sizeStr, sizeBytes: parseSize(sizeStr), seeders, source: "Knaben" });
             }
         });
