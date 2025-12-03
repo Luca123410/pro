@@ -278,7 +278,8 @@ async function searchNyaa(title, year, type, reqSeason, reqEpisode) {
     try {
         let q = clean(title);
         if (!q.toLowerCase().includes("ita")) q += " ita";
-        const url = `https://nyaa.si/?f=0&c=0_0&q=${encodeURIComponent(q)}&s=seeders&o=desc`;
+        // MODIFICA URL QUI
+        const url = `https://nyaa.iss.ink/?f=0&c=0_0&q=${encodeURIComponent(q)}&s=seeders&o=desc`;
         const { data } = await axios.get(url, { headers: COMMON_HEADERS, httpsAgent, timeout: TIMEOUT });
         const $ = cheerio.load(data);
         const results = [];
