@@ -2,24 +2,29 @@ const axios = require("axios");
 const cheerio = require("cheerio");
 const https = require("https");
 
-// --- CONFIGURAZIONE ---
-const TIMEOUT = 5500; // 5.5s timeout per non bloccare troppo
-const KNABEN_API = "https://api.knaben.org/v1"; // Endpoint API Knaben
-const TRACKERS = [
-    "udp://tracker.opentrackr.org:1337/announce",
-    "udp://open.demonii.com:1337/announce",
-    "udp://tracker.coppersurfer.tk:6969/announce",
-    "udp://tracker.leechers-paradise.org:6969/announce",
-    "udp://p4p.arenabg.com:1337/announce",
-    "udp://tracker.internetwarriors.net:1337/announce"
-];
-const httpsAgent = new https.Agent({ rejectUnauthorized: false, keepAlive: true });
-const COMMON_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
-    'Referer': 'https://www.google.com/'
+// --- CONFIGURAZIONE CENTRALE ---
+const CONFIG = {
+    TIMEOUT: 5500,
+    KNABEN_API: "https://api.knaben.org/v1",
+    TRACKERS: [
+        "udp://tracker.opentrackr.org:1337/announce",
+        "udp://open.demonii.com:1337/announce",
+        "udp://tracker.coppersurfer.tk:6969/announce",
+        "udp://tracker.leechers-paradise.org:6969/announce",
+        "udp://p4p.arenabg.com:1337/announce",
+        "udp://tracker.internetwarriors.net:1337/announce"
+    ],
+    HEADERS: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Referer': 'https://www.google.com/'
+    },
+    // RejectUnauthorized false è rischioso, attivare solo se necessario. Qui mantenuto come da codice originale.
+    HTTPS_AGENT_OPTIONS: { rejectUnauthorized: false, keepAlive: true } 
 };
+
+const httpsAgent = new https.Agent(CONFIG.HTTPS_AGENT_OPTIONS);
 
 // --- HELPER DI PARSING ---
 
@@ -30,23 +35,20 @@ function clean(title) {
 function isItalianResult(name) {
     const nameUpper = name.toUpperCase();
     if (/\b(ENG|ENGLISH)\b/i.test(nameUpper) && !/\b(ITA|MULTI|DUAL)\b/i.test(nameUpper)) return false;
-    // Regex estesa per catturare tutti i tag italiani
     const regex = /\b(ITA|ITALIAN|ITALIANO|MULTI|DUAL|MD|SUB.?ITA|SUBITA|SUB-ITA|ITALUB|FORCED|AC3.?ITA|DTS.?ITA|AUDIO.?ITA|ITA.?AC3|ITA.?HD|BDMUX|DVDRIP.?ITA|CiNEFiLE|NovaRip|MeM|robbyrs|iDN_CreW|SPEEDVIDEO|WMS|TRIDIM)\b/i;
     return regex.test(nameUpper);
 }
 
 function checkYear(name, year, type) {
     if (!year) return true;
-    if (type === 'tv' || type === 'series') return true; // Per le serie l'anno è meno importante
+    if (type === 'tv' || type === 'series') return true;
     const y = parseInt(year);
     return [y - 1, y, y + 1].some(ay => name.includes(ay.toString()));
 }
 
-// Estrae S e E dall'ID di Stremio (tt12345:3:6)
 function parseImdbId(imdbId) {
     if (!imdbId || !imdbId.includes(':')) return { season: null, episode: null };
     const parts = imdbId.split(':');
-    // Prende sempre gli ultimi due segmenti come Stagione ed Episodio
     if (parts.length >= 3) {
         return { season: parseInt(parts[parts.length - 2]), episode: parseInt(parts[parts.length - 1]) };
     }
@@ -59,25 +61,32 @@ function extractInfo(name) {
     let season = null;
     let episode = null;
 
-    // 1. Cerca formato standard S01E01 / S1E1
-    const standardMatch = upper.match(/S(\d{1,2})[._\s-]*E(\d{1,3})/);
-    if (standardMatch) {
-        season = parseInt(standardMatch[1]);
-        episode = parseInt(standardMatch[2]);
+    // 0. Cerca formato con punto S01.E01 (NUOVO)
+    const dotMatch = upper.match(/S(\d{1,2})\.E(\d{1,3})/);
+    if (dotMatch) { 
+        season = parseInt(dotMatch[1]); 
+        episode = parseInt(dotMatch[2]); 
     } else {
-        // 2. Cerca formato 1x01 / 1X01
-        const xMatch = upper.match(/(\d{1,2})X(\d{1,3})/);
-        if (xMatch) {
-            season = parseInt(xMatch[1]);
-            episode = parseInt(xMatch[2]);
+        // 1. Cerca formato standard S01E01 / S1E1
+        const standardMatch = upper.match(/S(\d{1,2})[._\s-]*E(\d{1,3})/);
+        if (standardMatch) {
+            season = parseInt(standardMatch[1]);
+            episode = parseInt(standardMatch[2]);
         } else {
-            // 3. Cerca "Stagione X" o "Season X"
-            const sMatch = upper.match(/(?:STAGIONE|SEASON|S)\s?(\d{1,2})(?![0-9])/);
-            if (sMatch) season = parseInt(sMatch[1]);
+            // 2. Cerca formato 1x01 / 1X01
+            const xMatch = upper.match(/(\d{1,2})X(\d{1,3})/);
+            if (xMatch) {
+                season = parseInt(xMatch[1]);
+                episode = parseInt(xMatch[2]);
+            } else {
+                // 3. Cerca "Stagione X" o "Season X"
+                const sMatch = upper.match(/(?:STAGIONE|SEASON|S)\s?(\d{1,2})(?![0-9])/);
+                if (sMatch) season = parseInt(sMatch[1]);
 
-            // 4. Cerca "Episodio X" o "Ep. X"
-            const eMatch = upper.match(/(?:EPISODIO|EP\.|_|\s)(\d{1,3})(?!\d|p|k|bit|mb|gb)/);
-            if (eMatch) episode = parseInt(eMatch[1]);
+                // 4. Cerca "Episodio X" o "Ep. X"
+                const eMatch = upper.match(/(?:EPISODIO|EP\.|_|\s)(\d{1,3})(?!\d|p|k|bit|mb|gb)/);
+                if (eMatch) episode = parseInt(eMatch[1]);
+            }
         }
     }
     return { season, episode };
@@ -85,7 +94,6 @@ function extractInfo(name) {
 
 // LOGICA FILTRO PERFETTO (Strict Mode)
 function isCorrectFormat(name, reqSeason, reqEpisode) {
-    // Se non ci sono requisiti (es. Film), passa tutto
     if (!reqSeason && !reqEpisode) return true;
 
     const info = extractInfo(name);
@@ -94,21 +102,31 @@ function isCorrectFormat(name, reqSeason, reqEpisode) {
     // Rileva Pack
     const isPack = upperName.includes("COMPLET") || upperName.includes("PACK") || upperName.includes("TUTTE") || upperName.includes("STAGIONE") || upperName.includes("SEASON");
 
-    // 1. Controllo STAGIONE
+    // Check Multi-Stagione (Range es. S01-S03) (NUOVO)
     if (reqSeason) {
-        // Se il file ha una stagione specifica e non coincide -> SCARTA
+        // Regex per range tipo S01-S03 o S01 - S03
+        const rangeMatch = upperName.match(/(?:S|STAGIONE)?\s*(\d{1,2})\s*-\s*(?:S|STAGIONE)?\s*(\d{1,2})/);
+        if (rangeMatch) {
+            const start = parseInt(rangeMatch[1]);
+            const end = parseInt(rangeMatch[2]);
+            // Se la stagione richiesta è nel range, accettiamo (a meno che non ci sia un episodio specifico che confligge, ma nei pack spesso non c'è)
+            if (reqSeason >= start && reqSeason <= end) {
+                // Se è un pack multi-stagione, spesso non ha numero episodio nel titolo, quindi va bene
+                return true; 
+            }
+        }
+    }
+
+    // 1. Controllo STAGIONE Standard
+    if (reqSeason) {
         if (info.season !== null && info.season !== reqSeason) return false;
     }
 
     // 2. Controllo EPISODIO
     if (reqEpisode) {
-        // Se trovo un episodio specifico nel nome file (es. E01)
         if (info.episode !== null) {
-            // Se è diverso da quello richiesto -> SCARTA (Risolve il problema 2x01 vs 2x05)
             if (info.episode !== reqEpisode) return false;
         } else {
-            // Se NON trovo l'episodio nel nome del file:
-            // Accetto SOLO se è un Pack completo che corrisponde alla stagione (o non ha stagione specificata)
             if (!isPack) return false; 
         }
     }
@@ -138,7 +156,7 @@ function bytesToSize(bytes) {
 async function searchCorsaro(title, year, type, reqSeason, reqEpisode) {
     try {
         const url = `https://ilcorsaronero.link/search?q=${encodeURIComponent(clean(title))}`;
-        const { data } = await axios.get(url, { headers: COMMON_HEADERS, httpsAgent, timeout: TIMEOUT });
+        const { data } = await axios.get(url, { headers: CONFIG.HEADERS, httpsAgent, timeout: CONFIG.TIMEOUT });
         if (data.includes("Cloudflare")) return [];
         const $ = cheerio.load(data);
         let items = [];
@@ -154,7 +172,7 @@ async function searchCorsaro(title, year, type, reqSeason, reqEpisode) {
         });
         const promises = items.map(async (item) => {
             try {
-                const detailPage = await axios.get(item.url, { headers: COMMON_HEADERS, httpsAgent, timeout: 3000 });
+                const detailPage = await axios.get(item.url, { headers: CONFIG.HEADERS, httpsAgent, timeout: 3000 });
                 const magnetMatch = detailPage.data.match(/magnet:\?xt=urn:btih:([a-zA-Z0-9]{40})/i);
                 if (!magnetMatch) return null;
                 const sizeMatch = detailPage.data.match(/(\d+(\.\d+)?)\s?(GB|MB|KB)/i);
@@ -175,60 +193,42 @@ async function searchCorsaro(title, year, type, reqSeason, reqEpisode) {
 
 async function searchKnaben(title, year, type, reqSeason, reqEpisode) {
     try {
-        // 1. Costruzione Query con ITA forzato (Critico per trovare file italiani)
         let query = clean(title);
         if (!query.toUpperCase().includes("ITA")) {
             query += " ITA";
         }
-
-        // 2. Payload per API v1 - MODIFICATO PER MASSIMIZZARE I RISULTATI
         const payload = {
             "search_field": "title",
             "query": query,
             "order_by": "seeders",
             "order_direction": "desc",
-            "hide_unsafe": false, // DISABILITATO: Prima era true, ma nascondeva troppi torrent validi
+            "hide_unsafe": false,
             "hide_xxx": true,
-            "size": 300 // AUMENTATO: Da 60 a 300 (Massimo consentito) per trovare l'ago nel pagliaio
-            // "search_type": "score" // RIMOSSO: Lasciamo il default fuzzy per trovare più corrispondenze
+            "size": 300
         };
-
-        // 3. Chiamata POST
-        const { data } = await axios.post(KNABEN_API, payload, {
+        const { data } = await axios.post(CONFIG.KNABEN_API, payload, {
             headers: {
                 'Content-Type': 'application/json',
-                'User-Agent': COMMON_HEADERS['User-Agent']
+                'User-Agent': CONFIG.HEADERS['User-Agent']
             },
-            timeout: TIMEOUT
+            timeout: CONFIG.TIMEOUT
         });
 
         if (!data || !data.hits) return [];
-
         const results = [];
-
         data.hits.forEach(item => {
             if (!item.title) return;
-
-            // COSTRUZIONE MAGNET
             let magnet = item.magnetUrl;
             if (!magnet && item.hash) {
                 magnet = `magnet:?xt=urn:btih:${item.hash}&dn=${encodeURIComponent(item.title)}`;
             }
             if (!magnet) return;
-
-            // Gestione size
             const sizeBytes = item.bytes ? parseInt(item.bytes) : 0;
             const sizeStr = bytesToSize(sizeBytes);
-            
-            // FILTRI LOCALI (Qui scartiamo la spazzatura inglese)
             const upperName = item.title.toUpperCase();
-            // Strict check: deve esserci scritto ITA o SUB-ITA
             const strictItaCheck = /\b(ITA|ITALIAN|ITALIANO|SUBITA|SUB-ITA)\b/.test(upperName);
 
-            if (strictItaCheck && 
-                checkYear(item.title, year, type) && 
-                isCorrectFormat(item.title, reqSeason, reqEpisode)) {
-                
+            if (strictItaCheck && checkYear(item.title, year, type) && isCorrectFormat(item.title, reqSeason, reqEpisode)) {
                 results.push({
                     title: item.title,
                     magnet: magnet,
@@ -239,9 +239,7 @@ async function searchKnaben(title, year, type, reqSeason, reqEpisode) {
                 });
             }
         });
-
         return results;
-
     } catch (error) {
         return [];
     }
@@ -250,7 +248,7 @@ async function searchKnaben(title, year, type, reqSeason, reqEpisode) {
 async function searchUindex(title, year, type, reqSeason, reqEpisode) {
     try {
         const url = `https://uindex.org/search.php?search=${encodeURIComponent(clean(title) + " ITA")}&c=0`;
-        const { data } = await axios.get(url, { headers: COMMON_HEADERS, httpsAgent, timeout: TIMEOUT, validateStatus: s => s < 500 });
+        const { data } = await axios.get(url, { headers: CONFIG.HEADERS, httpsAgent, timeout: CONFIG.TIMEOUT, validateStatus: s => s < 500 });
         if (!data || typeof data !== 'string') return [];
         const rows = data.split(/<tr[^>]*>/gi).filter(row => row.includes('magnet:?xt=urn:btih:') && row.includes('<td'));
         let results = [];
@@ -278,9 +276,8 @@ async function searchNyaa(title, year, type, reqSeason, reqEpisode) {
     try {
         let q = clean(title);
         if (!q.toLowerCase().includes("ita")) q += " ita";
-        // MODIFICA URL QUI
         const url = `https://nyaa.iss.ink/?f=0&c=0_0&q=${encodeURIComponent(q)}&s=seeders&o=desc`;
-        const { data } = await axios.get(url, { headers: COMMON_HEADERS, httpsAgent, timeout: TIMEOUT });
+        const { data } = await axios.get(url, { headers: CONFIG.HEADERS, httpsAgent, timeout: CONFIG.TIMEOUT });
         const $ = cheerio.load(data);
         const results = [];
         $("tr.default, tr.success, tr.danger").each((i, el) => {
@@ -301,7 +298,7 @@ async function searchNyaa(title, year, type, reqSeason, reqEpisode) {
 async function searchTPB(title, year, type, reqSeason, reqEpisode) {
     try {
         const q = `${clean(title)} ${type === 'tv' ? '' : (year || "")} ITA`;
-        const { data } = await axios.get("https://apibay.org/q.php", { params: { q, cat: type === 'tv' ? 0 : 201 }, timeout: TIMEOUT }).catch(() => ({ data: [] }));
+        const { data } = await axios.get("https://apibay.org/q.php", { params: { q, cat: type === 'tv' ? 0 : 201 }, timeout: CONFIG.TIMEOUT }).catch(() => ({ data: [] }));
         if (!Array.isArray(data) || data[0]?.name === "No results returned") return [];
         return data.filter(i => 
             i.info_hash !== "0000000000000000000000000000000000000000" && 
@@ -321,11 +318,10 @@ async function searchTPB(title, year, type, reqSeason, reqEpisode) {
 
 async function search1337x(title, year, type, reqSeason, reqEpisode) {
     try {
-        // Uso il dominio proxy richiesto
         const domain = "https://1337x.ninjaproxy1.com";
         const url = `${domain}/search/${encodeURIComponent(clean(title) + " ITA")}/1/`;
         
-        const { data } = await axios.get(url, { timeout: TIMEOUT, headers: COMMON_HEADERS, httpsAgent });
+        const { data } = await axios.get(url, { timeout: CONFIG.TIMEOUT, headers: CONFIG.HEADERS, httpsAgent });
         const $ = cheerio.load(data || "");
         const candidates = [];
         $("table.table-list tbody tr").slice(0, 8).each((i, row) => {
@@ -338,7 +334,7 @@ async function search1337x(title, year, type, reqSeason, reqEpisode) {
         });
         const promises = candidates.map(async (cand) => {
             try {
-                const { data } = await axios.get(cand.link, { timeout: 3000, headers: COMMON_HEADERS, httpsAgent });
+                const { data } = await axios.get(cand.link, { timeout: 3000, headers: CONFIG.HEADERS, httpsAgent });
                 const $d = cheerio.load(data);
                 const magnet = $d("a[href^='magnet:?']").first().attr("href");
                 const sizeStr = $d("ul.list li").filter((i, el) => $(el).text().includes("Size")).text().replace(/.*Size:\s*/,'').trim();
@@ -352,7 +348,7 @@ async function search1337x(title, year, type, reqSeason, reqEpisode) {
 async function searchTorrentGalaxy(title, year, type, reqSeason, reqEpisode) {
     try {
         const url = `https://torrentgalaxy.to/torrents.php?search=${encodeURIComponent(clean(title) + " ITA")}&sort=seeders&order=desc`;
-        const { data } = await axios.get(url, { timeout: TIMEOUT, headers: COMMON_HEADERS, httpsAgent });
+        const { data } = await axios.get(url, { timeout: CONFIG.TIMEOUT, headers: CONFIG.HEADERS, httpsAgent });
         const $ = cheerio.load(data);
         const results = [];
         $('div.tgxtablerow').each((i, row) => {
@@ -372,7 +368,7 @@ async function searchTorrentGalaxy(title, year, type, reqSeason, reqEpisode) {
 async function searchBitSearch(title, year, type, reqSeason, reqEpisode) {
     try {
         const url = `https://bitsearch.to/search?q=${encodeURIComponent(clean(title) + " ITA")}`;
-        const { data } = await axios.get(url, { timeout: TIMEOUT, headers: COMMON_HEADERS, httpsAgent }).catch(() => ({ data: "" }));
+        const { data } = await axios.get(url, { timeout: CONFIG.TIMEOUT, headers: CONFIG.HEADERS, httpsAgent }).catch(() => ({ data: "" }));
         const $ = cheerio.load(data || "");
         const results = [];
         $("li.search-result").each((i, el) => {
@@ -391,7 +387,7 @@ async function searchBitSearch(title, year, type, reqSeason, reqEpisode) {
 async function searchLime(title, year, type, reqSeason, reqEpisode) {
     try {
         const url = `https://limetorrents.info/search/all/${encodeURIComponent(clean(title) + " ITA")}/seeds/1/`;
-        const { data } = await axios.get(url, { timeout: TIMEOUT, headers: COMMON_HEADERS, httpsAgent }).catch(() => ({ data: "" }));
+        const { data } = await axios.get(url, { timeout: CONFIG.TIMEOUT, headers: CONFIG.HEADERS, httpsAgent }).catch(() => ({ data: "" }));
         const $ = cheerio.load(data || "");
         const candidates = [];
         $("table.table2 tbody tr").each((i, row) => {
@@ -408,7 +404,7 @@ async function searchLime(title, year, type, reqSeason, reqEpisode) {
         });
         const promises = candidates.slice(0, 5).map(async (cand) => {
             try {
-                const { data } = await axios.get(cand.link, { timeout: 3000, headers: COMMON_HEADERS, httpsAgent }); 
+                const { data } = await axios.get(cand.link, { timeout: 3000, headers: CONFIG.HEADERS, httpsAgent }); 
                 const magnet = cheerio.load(data)("a[href^='magnet:?']").first().attr("href");
                 return magnet ? { title: cand.name, magnet, seeders: cand.seeders, size: cand.sizeStr, sizeBytes: parseSize(cand.sizeStr), source: "Lime" } : null;
             } catch { return null; }
@@ -422,7 +418,7 @@ async function searchGlo(title, year, type, reqSeason, reqEpisode) {
         let q = clean(title);
         if (!q.toLowerCase().includes("ita")) q += " ITA";
         const url = `https://glotorrents.com/search_results.php?search=${encodeURIComponent(q)}&incldead=0&sort=seeders&order=desc`;
-        const { data } = await axios.get(url, { headers: COMMON_HEADERS, httpsAgent, timeout: TIMEOUT });
+        const { data } = await axios.get(url, { headers: CONFIG.HEADERS, httpsAgent, timeout: CONFIG.TIMEOUT });
         const $ = cheerio.load(data);
         const candidates = [];
         $('tr.t-row').each((i, el) => {
@@ -437,7 +433,7 @@ async function searchGlo(title, year, type, reqSeason, reqEpisode) {
         });
         const promises = candidates.slice(0, 5).map(async (cand) => {
             try {
-                const { data } = await axios.get(cand.detailLink, { headers: COMMON_HEADERS, httpsAgent, timeout: 3000 });
+                const { data } = await axios.get(cand.detailLink, { headers: CONFIG.HEADERS, httpsAgent, timeout: 3000 });
                 const magnet = cheerio.load(data)('a[href^="magnet:"]').attr('href');
                 if (magnet) {
                     return { title: cand.name, magnet, size: cand.sizeStr, sizeBytes: parseSize(cand.sizeStr), seeders: cand.seeders, source: "Glo" };
@@ -449,24 +445,28 @@ async function searchGlo(title, year, type, reqSeason, reqEpisode) {
     } catch { return []; }
 }
 
+// DEFINIZIONE MOTORI ATTIVI (CONFIGURABILE)
+CONFIG.ENGINES = [
+    searchCorsaro,
+    searchTPB,
+    search1337x,
+    searchBitSearch,
+    searchTorrentGalaxy,
+    searchNyaa,
+    searchLime,
+    searchGlo,
+    searchKnaben,
+    searchUindex
+];
+
 // --- MAIN AGGREGATOR ---
 async function searchMagnet(title, year, type, imdbId) {
-    // Estrazione parametri critici
     const { season: reqSeason, episode: reqEpisode } = parseImdbId(imdbId);
     
-    // Passiamo reqSeason/reqEpisode a TUTTI i motori
-    const promises = [
-        searchCorsaro(title, year, type, reqSeason, reqEpisode),
-        searchTPB(title, year, type, reqSeason, reqEpisode),
-        search1337x(title, year, type, reqSeason, reqEpisode),
-        searchBitSearch(title, year, type, reqSeason, reqEpisode),
-        searchTorrentGalaxy(title, year, type, reqSeason, reqEpisode),
-        searchNyaa(title, year, type, reqSeason, reqEpisode),
-        searchLime(title, year, type, reqSeason, reqEpisode),
-        searchGlo(title, year, type, reqSeason, reqEpisode),
-        searchKnaben(title, year, type, reqSeason, reqEpisode),
-        searchUindex(title, year, type, reqSeason, reqEpisode)
-    ];
+    // Esecuzione dinamica dei motori in configurazione
+    const promises = CONFIG.ENGINES.map(engine => 
+        engine(title, year, type, reqSeason, reqEpisode)
+    );
     
     const resultsArrays = await Promise.allSettled(promises);
     
@@ -481,7 +481,7 @@ async function searchMagnet(title, year, type, imdbId) {
     // Add trackers
     topResults.forEach(r => {
         if (r.magnet && !r.magnet.includes("&tr=")) {
-            TRACKERS.forEach(tr => r.magnet += `&tr=${encodeURIComponent(tr)}`);
+            CONFIG.TRACKERS.forEach(tr => r.magnet += `&tr=${encodeURIComponent(tr)}`);
         }
     });
     
@@ -498,4 +498,4 @@ async function searchMagnet(title, year, type, imdbId) {
     return finalResults;
 }
 
-module.exports = { searchMagnet };
+module.exports = { searchMagnet, CONFIG };
