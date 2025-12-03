@@ -1,100 +1,131 @@
 /**
- * smart_parser.js
- * NLP-Lite Parser per Leviathan (Hybrid Mode)
- * Più permissivo: Fuzzy + Percentuale di Parole Chiave
+ * smart_parser.js – Versione Potenziata by ChatGPT x Luca
+ * Hybrid NLP + Fuzzy + Token Intelligence
  */
 
 const FuzzySet = require("fuzzyset");
 
-// Token che consideriamo "rumore tecnico" e ignoriamo completamente
+// Junk tecnico
 const JUNK_TOKENS = new Set([
-    "h264", "x264", "h265", "x265", "hevc", "1080p", "720p", "4k", "2160p", 
-    "hdr", "web", "web-dl", "bluray", "rip", "ita", "eng", "multi", "sub", 
-    "ac3", "aac", "mkv", "mp4", "avi", "divx", "xvid", "dts", "truehd",
-    "atmos", "vision", "repack", "remux", "proper", "complete", "pack",
-    "uhd", "sdr", "season", "stagione", "episode", "episodio"
+    "h264","x264","h265","x265","hevc","1080p","720p","4k","2160p",
+    "hdr","web","web-dl","bluray","rip","ita","eng","multi","sub",
+    "ac3","aac","mkv","mp4","avi","divx","xvid","dts","truehd",
+    "atmos","vision","repack","remux","proper","complete","pack",
+    "uhd","sdr","season","stagione","episode","episodio","cam","ts"
 ]);
 
-// Parole comuni da ignorare nel conteggio delle parole chiave
+// Stop words
 const STOP_WORDS = new Set([
-    "il", "lo", "la", "i", "gli", "le", "un", "uno", "una",
-    "the", "a", "an", "of", "in", "on", "at", "to", "for", "by", "with", "and", "&"
+    "il","lo","la","i","gli","le","un","uno","una",
+    "the","a","an","of","in","on","at","to","for","by","with","and","&"
 ]);
 
-function tokenize(str) {
-    return str.toLowerCase()
-        .replace(/['"._\[\]()\-:;]/g, " ") // Rimuove punteggiatura estesa
-        .split(/\s+/)
-        .filter(t => t.length > 0);
+// Trasformazione numeri romani → arabi
+function romanToArabic(str) {
+    const map = { i:1,v:5,x:10,l:50,c:100 };
+    let total = 0;
+    let prev = 0;
+    str = str.toLowerCase();
+
+    for (let c of str.split("").reverse()) {
+        const val = map[c] || 0;
+        total += val < prev ? -val : val;
+        prev = val;
+    }
+    return total;
 }
 
-/**
- * Analizza se il filename corrisponde al metadata
- */
-function smartMatch(metaTitle, filename, isSeries = false) {
+function normalizeTitle(t) {
+    return t
+        .toLowerCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")  // rimuove accenti
+        .replace(/[^a-z0-9\s]/g, " ")
+        .replace(/\b(ii|iii|iv|vi|vii|viii|ix|x)\b/gi, r => romanToArabic(r))
+        .replace(/\b(l|il|lo|la|i|gli|le|the)\b/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function tokenize(str) {
+    return normalizeTitle(str).split(/\s+/).filter(Boolean);
+}
+
+function extractEpisodeInfo(str) {
+    const lower = str.toLowerCase();
+    const sxe = lower.match(/s(\d{1,2})e(\d{1,2})/);
+    const xformat = lower.match(/(\d{1,2})x(\d{1,2})/);
+    if (sxe) return { season: parseInt(sxe[1]), episode: parseInt(sxe[2]) };
+    if (xformat) return { season: parseInt(xformat[1]), episode: parseInt(xformat[2]) };
+    return null;
+}
+
+function smartMatch(metaTitle, filename, isSeries = false, metaSeason = null, metaEpisode = null) {
     if (!filename) return false;
     
-    // 1. Pulizia Token
+    // Reject file non validi (sample, trailer)
+    const fLower = filename.toLowerCase();
+    if (fLower.includes("sample") || fLower.includes("trailer")) return false;
+
+    // Tokenizzazione
     const fTokensRaw = tokenize(filename);
     const mTokensRaw = tokenize(metaTitle);
 
-    // Rimuoviamo Junk tecnico dal filename
     const fTokens = fTokensRaw.filter(t => !JUNK_TOKENS.has(t));
-    // Rimuoviamo Stop Words dal titolo cercato (per il calcolo percentuale)
     const mTokens = mTokensRaw.filter(t => !STOP_WORDS.has(t));
 
-    // Ricostruiamo le stringhe pulite
+    if (mTokens.length === 0) return false;
+
     const cleanF = fTokens.join(" ");
-    const cleanM = mTokensRaw.join(" "); // Teniamo il titolo originale tokenizzato per il Fuzzy
+    const cleanM = mTokens.join(" ");
 
     // ---------------------------------------------------------
-    // STRATEGIA 1: FUZZY MATCH (Per typo e titoli simili)
+    // 1) FUZZY MATCH BIDIREZIONALE
     // ---------------------------------------------------------
-    // Abbassiamo la soglia: 0.65 è abbastanza permissivo ma sicuro
-    const minThreshold = cleanM.length < 5 ? 0.90 : 0.65; 
-    const fs = FuzzySet([cleanM]);
-    const match = fs.get(cleanF);
+    const fuzzyA = FuzzySet([cleanM]).get(cleanF);
+    const fuzzyB = FuzzySet([cleanF]).get(cleanM);
 
-    if (match && match[0][0] >= minThreshold) {
-        return true; // Match Fuzzy Accettato
-    }
+    const fuzzyScore = Math.max(
+        fuzzyA?.[0]?.[0] || 0,
+        fuzzyB?.[0]?.[0] || 0
+    );
+
+    const threshold = cleanM.length < 5 ? 0.90 : 0.65;
+
+    if (fuzzyScore >= threshold) return true;
 
     // ---------------------------------------------------------
-    // STRATEGIA 2: TOKEN OVERLAP (Per abbreviazioni e ordine sparso)
+    // 2) TOKEN OVERLAP
     // ---------------------------------------------------------
-    // Contiamo quante parole significative del titolo sono presenti nel filename
-    
-    if (mTokens.length === 0) return true; // Titolo fatto solo di stop words? Accetta (caso raro)
-
-    let foundCount = 0;
+    let found = 0;
     fTokens.forEach(ft => {
-        // Cerchiamo match esatti o parziali forti (es. "avenger" in "avengers")
         if (mTokens.some(mt => mt === ft || (mt.length > 4 && ft.includes(mt)))) {
-            foundCount++;
+            found++;
         }
     });
 
-    // Calcolo percentuale di presenza
-    // Se il titolo è "Mission Impossible Dead Reckoning", mTokens = 4.
-    // Se trovo "Mission" e "Impossible", ho 2/4 = 0.5.
-    
-    const overlapRatio = foundCount / mTokens.length;
-
-    // Regole di accettazione:
-    // - Se il titolo ha solo 1 parola significativa: deve esserci (Ratio 1.0)
-    // - Se ha 2 parole: ne basta 1 se il fuzzy non era disastroso, ma meglio richiederne 2.
-    // - Se > 2 parole: accettiamo se il 60% delle parole c'è.
-    
-    if (mTokens.length === 1 && overlapRatio >= 1) return true;
-    if (mTokens.length > 1 && overlapRatio >= 0.60) return true;
+    const ratio = found / mTokens.length;
+    if (ratio >= 0.60) return true;
+    if (mTokens.length === 1 && ratio === 1) return true;
 
     // ---------------------------------------------------------
-    // STRATEGIA 3: SALVAGENTE PER LE SERIE TV
+    // 3) SERIE TV: Matching Episodio
     // ---------------------------------------------------------
-    // Se è una serie, e il nome della serie è contenuto esattamente nel filename (anche con junk intorno)
-    // Accettiamo quasi sempre, perché il filtro SxxExx viene fatto altrove o nel ranking.
+    if (isSeries && (metaSeason !== null && metaEpisode !== null)) {
+        const epInfo = extractEpisodeInfo(filename);
+        if (!epInfo) return false; // Il file non contiene episodio → reject
+        if (epInfo.season === metaSeason && epInfo.episode === metaEpisode) {
+            // Controllo titolo semplice
+            const simpleMeta = mTokens.join("");
+            const simpleFile = fTokens.join("");
+            return simpleFile.includes(simpleMeta);
+        }
+        return false;
+    }
+
+    // ---------------------------------------------------------
+    // 4) Serie TV: fallback solo titolo
+    // ---------------------------------------------------------
     if (isSeries) {
-        // Ricostruiamo titolo semplice senza spazi per check brutale
         const simpleMeta = mTokens.join("");
         const simpleFile = fTokens.join("");
         if (simpleFile.includes(simpleMeta)) return true;
