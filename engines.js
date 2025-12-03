@@ -4,6 +4,7 @@ const https = require("https");
 
 // --- CONFIGURAZIONE ---
 const TIMEOUT = 5500; // 5.5s timeout per non bloccare troppo
+const KNABEN_API = "https://api.knaben.org/v1"; // Endpoint API Knaben
 const TRACKERS = [
     "udp://tracker.opentrackr.org:1337/announce",
     "udp://open.demonii.com:1337/announce",
@@ -132,7 +133,7 @@ function bytesToSize(bytes) {
     return (bytes / 1073741824).toFixed(2) + " GB";
 }
 
-// --- MOTORI DI RICERCA (Adattati per ricevere reqSeason/reqEpisode) ---
+// --- MOTORI DI RICERCA ---
 
 async function searchCorsaro(title, year, type, reqSeason, reqEpisode) {
     try {
@@ -174,27 +175,76 @@ async function searchCorsaro(title, year, type, reqSeason, reqEpisode) {
 
 async function searchKnaben(title, year, type, reqSeason, reqEpisode) {
     try {
-        const url = `https://knaben.org/search/${encodeURIComponent(clean(title) + " ITA")}/0/1/seeders`;
-        const { data } = await axios.get(url, { headers: COMMON_HEADERS, httpsAgent, timeout: TIMEOUT });
-        const $ = cheerio.load(data);
-        const results = [];
-        $('table.table tbody tr').each((_, row) => {
-            const tds = $(row).find('td');
-            if (tds.length < 5) return;
-            const name = tds.eq(1).find('a[title]').text().trim();
-            const magnet = $(row).find('a[href^="magnet:"]').attr('href');
-            const sizeStr = tds.eq(2).text().trim();
-            const seeders = parseInt(tds.eq(4).text().trim()) || 0;
+        // 1. Costruzione Query con ITA forzato (Critico per trovare file italiani)
+        let query = clean(title);
+        if (!query.toUpperCase().includes("ITA")) {
+            query += " ITA";
+        }
 
-            const upperName = name.toUpperCase();
+        // 2. Payload per API v1 - MODIFICATO PER MASSIMIZZARE I RISULTATI
+        const payload = {
+            "search_field": "title",
+            "query": query,
+            "order_by": "seeders",
+            "order_direction": "desc",
+            "hide_unsafe": false, // DISABILITATO: Prima era true, ma nascondeva troppi torrent validi
+            "hide_xxx": true,
+            "size": 300 // AUMENTATO: Da 60 a 300 (Massimo consentito) per trovare l'ago nel pagliaio
+            // "search_type": "score" // RIMOSSO: Lasciamo il default fuzzy per trovare più corrispondenze
+        };
+
+        // 3. Chiamata POST
+        const { data } = await axios.post(KNABEN_API, payload, {
+            headers: {
+                'Content-Type': 'application/json',
+                'User-Agent': COMMON_HEADERS['User-Agent']
+            },
+            timeout: TIMEOUT
+        });
+
+        if (!data || !data.hits) return [];
+
+        const results = [];
+
+        data.hits.forEach(item => {
+            if (!item.title) return;
+
+            // COSTRUZIONE MAGNET
+            let magnet = item.magnetUrl;
+            if (!magnet && item.hash) {
+                magnet = `magnet:?xt=urn:btih:${item.hash}&dn=${encodeURIComponent(item.title)}`;
+            }
+            if (!magnet) return;
+
+            // Gestione size
+            const sizeBytes = item.bytes ? parseInt(item.bytes) : 0;
+            const sizeStr = bytesToSize(sizeBytes);
+            
+            // FILTRI LOCALI (Qui scartiamo la spazzatura inglese)
+            const upperName = item.title.toUpperCase();
+            // Strict check: deve esserci scritto ITA o SUB-ITA
             const strictItaCheck = /\b(ITA|ITALIAN|ITALIANO|SUBITA|SUB-ITA)\b/.test(upperName);
 
-            if (name && magnet && strictItaCheck && checkYear(name, year, type) && isCorrectFormat(name, reqSeason, reqEpisode)) {
-                results.push({ title: name, magnet, size: sizeStr, sizeBytes: parseSize(sizeStr), seeders, source: "Knaben" });
+            if (strictItaCheck && 
+                checkYear(item.title, year, type) && 
+                isCorrectFormat(item.title, reqSeason, reqEpisode)) {
+                
+                results.push({
+                    title: item.title,
+                    magnet: magnet,
+                    size: sizeStr,
+                    sizeBytes: sizeBytes,
+                    seeders: item.seeders || 0,
+                    source: "Knaben"
+                });
             }
         });
+
         return results;
-    } catch { return []; }
+
+    } catch (error) {
+        return [];
+    }
 }
 
 async function searchUindex(title, year, type, reqSeason, reqEpisode) {
@@ -270,7 +320,7 @@ async function searchTPB(title, year, type, reqSeason, reqEpisode) {
 
 async function search1337x(title, year, type, reqSeason, reqEpisode) {
     try {
-        // MODIFICA: Uso il dominio proxy richiesto
+        // Uso il dominio proxy richiesto
         const domain = "https://1337x.ninjaproxy1.com";
         const url = `${domain}/search/${encodeURIComponent(clean(title) + " ITA")}/1/`;
         
@@ -282,7 +332,6 @@ async function search1337x(title, year, type, reqSeason, reqEpisode) {
             const link = $(row).find("td.name a").last().attr("href");
             const seeders = parseInt($(row).find("td.seeds").text().replace(/,/g, "")) || 0;
             if (name && link && isItalianResult(name) && checkYear(name, year, type) && isCorrectFormat(name, reqSeason, reqEpisode)) {
-                // MODIFICA: Costruisco il link usando il nuovo dominio
                 candidates.push({ name, link: `${domain}${link}`, seeders });
             }
         });
