@@ -174,7 +174,6 @@ async function searchCorsaro(title, year, type, reqSeason, reqEpisode) {
 
 async function searchKnaben(title, year, type, reqSeason, reqEpisode) {
     try {
-        // MODIFICA: Aggiungiamo "ITA" direttamente nella query per Knaben
         const url = `https://knaben.org/search/${encodeURIComponent(clean(title) + " ITA")}/0/1/seeders`;
         const { data } = await axios.get(url, { headers: COMMON_HEADERS, httpsAgent, timeout: TIMEOUT });
         const $ = cheerio.load(data);
@@ -187,7 +186,6 @@ async function searchKnaben(title, year, type, reqSeason, reqEpisode) {
             const sizeStr = tds.eq(2).text().trim();
             const seeders = parseInt(tds.eq(4).text().trim()) || 0;
 
-            // MODIFICA: Filtro Strict Mode per Knaben. Scarta se non c'è scritto "ITA" esplicitamente.
             const upperName = name.toUpperCase();
             const strictItaCheck = /\b(ITA|ITALIAN|ITALIANO|SUBITA|SUB-ITA)\b/.test(upperName);
 
@@ -272,7 +270,10 @@ async function searchTPB(title, year, type, reqSeason, reqEpisode) {
 
 async function search1337x(title, year, type, reqSeason, reqEpisode) {
     try {
-        const url = `https://1337x.to/search/${encodeURIComponent(clean(title) + " ITA")}/1/`;
+        // MODIFICA: Uso il dominio proxy richiesto
+        const domain = "https://1337x.ninjaproxy1.com";
+        const url = `${domain}/search/${encodeURIComponent(clean(title) + " ITA")}/1/`;
+        
         const { data } = await axios.get(url, { timeout: TIMEOUT, headers: COMMON_HEADERS, httpsAgent });
         const $ = cheerio.load(data || "");
         const candidates = [];
@@ -281,7 +282,8 @@ async function search1337x(title, year, type, reqSeason, reqEpisode) {
             const link = $(row).find("td.name a").last().attr("href");
             const seeders = parseInt($(row).find("td.seeds").text().replace(/,/g, "")) || 0;
             if (name && link && isItalianResult(name) && checkYear(name, year, type) && isCorrectFormat(name, reqSeason, reqEpisode)) {
-                candidates.push({ name, link: `https://1337x.to${link}`, seeders });
+                // MODIFICA: Costruisco il link usando il nuovo dominio
+                candidates.push({ name, link: `${domain}${link}`, seeders });
             }
         });
         const promises = candidates.map(async (cand) => {
