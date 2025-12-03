@@ -1,6 +1,6 @@
 /**
  * smart_parser.js – Versione Potenziata by ChatGPT x Luca
- * Hybrid NLP + Fuzzy + Token Intelligence
+ * Hybrid NLP + Fuzzy + Token Intelligence (Con Fix Anti-Spinoff)
  */
 
 const FuzzySet = require("fuzzyset");
@@ -11,7 +11,8 @@ const JUNK_TOKENS = new Set([
     "hdr","web","web-dl","bluray","rip","ita","eng","multi","sub",
     "ac3","aac","mkv","mp4","avi","divx","xvid","dts","truehd",
     "atmos","vision","repack","remux","proper","complete","pack",
-    "uhd","sdr","season","stagione","episode","episodio","cam","ts"
+    "uhd","sdr","season","stagione","episode","episodio","cam","ts",
+    "hdtv", "amzn", "dsnp", "nf" // (Opzionale: aggiunti junk comuni streaming per pulizia)
 ]);
 
 // Stop words
@@ -19,6 +20,23 @@ const STOP_WORDS = new Set([
     "il","lo","la","i","gli","le","un","uno","una",
     "the","a","an","of","in","on","at","to","for","by","with","and","&"
 ]);
+
+// --- [INIZIO CORREZIONE: LISTA NERA & SPINOFF] ---
+const FORBIDDEN_EXPANSIONS = new Set([
+    "new","blood","resurrection","returns","reborn",
+    "origins","legacy","revival","sequel",
+    "redemption", "evolution", "dead city", "world beyond", "fear the"
+]);
+
+const SPINOFF_KEYWORDS = {
+    "dexter": ["new blood"],
+    "the walking dead": ["dead city", "world beyond", "fear", "daryl"],
+    "breaking bad": ["better call saul"],
+    "game of thrones": ["house of the dragon"],
+    "csi": ["miami", "ny", "cyber", "vegas"],
+    "ncis": ["los angeles", "new orleans", "hawaii", "sydney"]
+};
+// --- [FINE CORREZIONE] ---
 
 // Trasformazione numeri romani → arabi
 function romanToArabic(str) {
@@ -59,12 +77,37 @@ function extractEpisodeInfo(str) {
     return null;
 }
 
+// --- [INIZIO CORREZIONE: Funzione Helper] ---
+function isUnwantedSpinoff(cleanMeta, cleanFile) {
+    for (const [parent, spinoffs] of Object.entries(SPINOFF_KEYWORDS)) {
+        if (cleanMeta.includes(parent)) {
+            for (const sp of spinoffs) {
+                // Se il file ha lo spinoff (es. "new blood") MA la ricerca NON lo aveva -> VERO (è indesiderato)
+                if (cleanFile.includes(sp) && !cleanMeta.includes(sp)) {
+                    return true; 
+                }
+            }
+        }
+    }
+    return false;
+}
+// --- [FINE CORREZIONE] ---
+
 function smartMatch(metaTitle, filename, isSeries = false, metaSeason = null, metaEpisode = null) {
     if (!filename) return false;
     
     // Reject file non validi (sample, trailer)
     const fLower = filename.toLowerCase();
     if (fLower.includes("sample") || fLower.includes("trailer")) return false;
+
+    // --- [INIZIO CORREZIONE: Blocco Preventivo Spinoff] ---
+    const cleanMetaString = normalizeTitle(metaTitle);
+    const cleanFileString = normalizeTitle(filename);
+
+    if (isUnwantedSpinoff(cleanMetaString, cleanFileString)) {
+        return false;
+    }
+    // --- [FINE CORREZIONE] ---
 
     // Tokenizzazione
     const fTokensRaw = tokenize(filename);
@@ -75,11 +118,22 @@ function smartMatch(metaTitle, filename, isSeries = false, metaSeason = null, me
 
     if (mTokens.length === 0) return false;
 
+    // --- [INIZIO CORREZIONE: Controllo Parole Proibite] ---
+    // Se trovo parole della lista nera (es. "new", "blood") nel file, 
+    // ma NON le stavo cercando, rifiuto il file.
+    const isCleanSearch = !mTokens.some(mt => FORBIDDEN_EXPANSIONS.has(mt));
+    if (isCleanSearch) {
+        for (const ft of fTokens) {
+            if (FORBIDDEN_EXPANSIONS.has(ft)) return false; // File rifiutato
+        }
+    }
+    // --- [FINE CORREZIONE] ---
+
     const cleanF = fTokens.join(" ");
     const cleanM = mTokens.join(" ");
 
     // ---------------------------------------------------------
-    // 1) FUZZY MATCH BIDIREZIONALE
+    // 1) FUZZY MATCH BIDIREZIONALE (Identico a prima)
     // ---------------------------------------------------------
     const fuzzyA = FuzzySet([cleanM]).get(cleanF);
     const fuzzyB = FuzzySet([cleanF]).get(cleanM);
@@ -94,7 +148,7 @@ function smartMatch(metaTitle, filename, isSeries = false, metaSeason = null, me
     if (fuzzyScore >= threshold) return true;
 
     // ---------------------------------------------------------
-    // 2) TOKEN OVERLAP
+    // 2) TOKEN OVERLAP (Identico a prima)
     // ---------------------------------------------------------
     let found = 0;
     fTokens.forEach(ft => {
@@ -108,7 +162,7 @@ function smartMatch(metaTitle, filename, isSeries = false, metaSeason = null, me
     if (mTokens.length === 1 && ratio === 1) return true;
 
     // ---------------------------------------------------------
-    // 3) SERIE TV: Matching Episodio
+    // 3) SERIE TV: Matching Episodio (Identico a prima)
     // ---------------------------------------------------------
     if (isSeries && (metaSeason !== null && metaEpisode !== null)) {
         const epInfo = extractEpisodeInfo(filename);
@@ -123,7 +177,7 @@ function smartMatch(metaTitle, filename, isSeries = false, metaSeason = null, me
     }
 
     // ---------------------------------------------------------
-    // 4) Serie TV: fallback solo titolo
+    // 4) Serie TV: fallback solo titolo (Identico a prima)
     // ---------------------------------------------------------
     if (isSeries) {
         const simpleMeta = mTokens.join("");
