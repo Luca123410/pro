@@ -1,5 +1,5 @@
 /**
- * smart_parser.js – Versione Potenziata by ChatGPT x Luca
+ * smart_parser.js 
  * Hybrid NLP + Fuzzy + Token Intelligence (Con Fix Anti-Spinoff)
  */
 
