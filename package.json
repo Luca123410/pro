@@ -19,7 +19,8 @@
     "helmet": "^7.1.0",
     "node-cache": "^5.1.2",
     "stremio-addon-sdk": "^1.6.9",
-    "string-similarity": "^4.0.4"
+    "string-similarity": "^4.0.4",
+    "cloudscraper": "^4.6.0"
   },
   "engines": {
     "node": ">=18.0.0"
