@@ -5,74 +5,84 @@ const cloudscraper = require("cloudscraper");
 
 // --- CONFIGURAZIONE CENTRALE ---
 const CONFIG = {
-    TIMEOUT: 5500,
+    TIMEOUT: 6000, // Increased slightly to allow for retry logic
     KNABEN_API: "https://api.knaben.org/v1",
+    // Pool of User-Agents for rotation
+    USER_AGENTS: [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    ],
+    // Static fallback list
     TRACKERS: [
         "udp://tracker.opentrackr.org:1337/announce",
         "udp://open.demonoid.ch:6969/announce",
         "udp://open.demonii.com:1337/announce",
         "udp://open.stealth.si:80/announce",
-        "udp://wepzone.net:6969/announce",
-        "udp://tracker2.dler.org:80/announce",
-        "udp://tracker1.myporn.club:9337/announce",
-        "udp://tracker.tryhackx.org:6969/announce",
         "udp://tracker.torrent.eu.org:451/announce",
         "udp://tracker.therarbg.to:6969/announce",
-        "udp://tracker.startwork.cv:1337/announce",
-        "udp://tracker.qu.ax:6969/announce",
-        "udp://tracker.gmi.gd:6969/announce",
-        "udp://tracker.filemail.com:6969/announce",
-        "udp://tracker.dler.org:6969/announce",
-        "udp://tracker.0x7c0.com:6969/announce",
-        "udp://tracker-udp.gbitt.info:80/announce",
-        "udp://tr4ck3r.duckdns.org:6969/announce",
-        "udp://t.overflow.biz:6969/announce",
-        "udp://run.publictracker.xyz:6969/announce",
-        "udp://retracker01-msk-virt.corbina.net:80/announce",
-        "udp://retracker.lanta.me:2710/announce",
-        "udp://p4p.arenabg.com:1337/announce",
-        "udp://opentracker.io:6969/announce",
-        "udp://martin-gebhardt.eu:25/announce",
-        "udp://leet-tracker.moe:1337/announce",
-        "udp://explodie.org:6969/announce",
-        "udp://d40969.acod.regrucolo.ru:6969/announce",
-        "udp://bt.bontal.net:6969/announce",
-        "udp://bandito.byterunner.io:6969/announce",
-        "udp://6ahddutb1ucc3cp.ru:6969/announce",
-        "udp://udp.tracker.projectk.org:23333/announce",
-        "udp://tracker.zupix.online:6969/announce",
-        "udp://tracker.tvunderground.org.ru:3218/announce",
-        "udp://tracker.torrust-demo.com:6969/announce",
-        "udp://tracker.t-1.org:6969/announce",
-        "udp://tracker.plx.im:6969/announce",
-        "udp://tracker.fnix.net:6969/announce",
-        "udp://tracker.ducks.party:1984/announce",
-        "udp://tracker.cloudbase.store:1333/announce",
-        "udp://tracker.1h.is:1337/announce",
-        "udp://torrentclub.online:54123/announce",
-        "udp://ipv4announce.sktorrent.eu:6969/announce",
-        "udp://concen.org:6969/announce",
-        "udp://bt.rer.lol:6969/announce"
+        "udp://tracker.tryhackx.org:6969/announce",
+        "udp://tracker.doko.moe:6969/announce",
+        "udp://opentracker.i2p.rocks:6969/announce"
     ],
-    HEADERS: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Referer': 'https://www.google.com/'
-    },
     HTTPS_AGENT_OPTIONS: { rejectUnauthorized: false, keepAlive: true } 
 };
+
+// --- UTILS & HELPERS ---
+
+// 1. User Agent Rotator
+function getRandomUA() {
+    return CONFIG.USER_AGENTS[Math.floor(Math.random() * CONFIG.USER_AGENTS.length)];
+}
+
+// 2. Dynamic Tracker Updater (Optional call)
+async function updateTrackers() {
+    try {
+        const { data } = await axios.get("https://ngosang.github.io/trackerslist/trackers_best.txt", { timeout: 3000 });
+        const list = data.split('\n').filter(line => line.trim() !== '');
+        if (list.length > 0) CONFIG.TRACKERS = list;
+    } catch (e) {
+        // Silent fail, keep using static list
+    }
+}
+
+// 3. Concurrency Limiter (Native implementation of p-limit)
+const limitConcurrency = (concurrency) => {
+    const queue = [];
+    let active = 0;
+    const next = () => {
+        active--;
+        if (queue.length > 0) queue.shift()();
+    };
+    const run = (fn) => new Promise((resolve, reject) => {
+        const execute = async () => {
+            active++;
+            try { resolve(await fn()); } catch (e) { reject(e); } finally { next(); }
+        };
+        if (active < concurrency) execute();
+        else queue.push(execute);
+    });
+    return run;
+};
+
+// 4. Strict Engine Timeout Wrapper
+const withTimeout = (promise, ms) => Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("Engine Timeout")), ms))
+]);
 
 const httpsAgent = new https.Agent(CONFIG.HTTPS_AGENT_OPTIONS);
 
 // --- BYPASS CLOUDFLARE (Wrapper Automatico) ---
 async function cfGet(url, config = {}) {
+    const headers = { ...CONFIG.HEADERS, 'User-Agent': getRandomUA(), ...config.headers };
     try {
-        return await axios.get(url, config);
+        return await axios.get(url, { ...config, headers, httpsAgent });
     } catch (err) {
         try {
             const html = await cloudscraper.get(url, {
-                headers: CONFIG.HEADERS,
+                headers: headers,
                 timeout: CONFIG.TIMEOUT
             });
             return { data: html };
@@ -84,7 +94,10 @@ async function cfGet(url, config = {}) {
 
 // --- HELPER DI PARSING ---
 function clean(title) {
-    return title.replace(/[:"'’]/g, "").replace(/[^a-zA-Z0-9\s\-.\[\]]/g, " ").replace(/\s+/g, " ").trim();
+    if (!title) return "";
+    // Decode HTML entities
+    const decoded = title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#039;/g, "'");
+    return decoded.replace(/[:"'’]/g, "").replace(/[^a-zA-Z0-9\s\-.\[\]]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function isItalianResult(name) {
@@ -181,12 +194,11 @@ function bytesToSize(bytes) {
 }
 
 // --- MOTORI DI RICERCA ---
-// tutti quelli soggetti a Cloudflare ora usano cfGet()
 
 async function searchCorsaro(title, year, type, reqSeason, reqEpisode) {
     try {
         const url = `https://ilcorsaronero.link/search?q=${encodeURIComponent(clean(title))}`;
-        const { data } = await cfGet(url, { headers: CONFIG.HEADERS, httpsAgent, timeout: CONFIG.TIMEOUT });
+        const { data } = await cfGet(url, { timeout: CONFIG.TIMEOUT });
 
         if (!data || data.includes("Cloudflare")) return [];
         const $ = cheerio.load(data);
@@ -203,9 +215,11 @@ async function searchCorsaro(title, year, type, reqSeason, reqEpisode) {
             }
         });
 
-        const promises = items.map(async (item) => {
+        // Limit concurrency to 5 parallel requests
+        const limit = limitConcurrency(5);
+        const promises = items.map(item => limit(async () => {
             try {
-                const detailPage = await cfGet(item.url, { headers: CONFIG.HEADERS, httpsAgent, timeout: 3000 });
+                const detailPage = await cfGet(item.url, { timeout: 3000 });
                 const magnetMatch = detailPage.data.match(/magnet:\?xt=urn:btih:([a-zA-Z0-9]{40})/i);
                 if (!magnetMatch) return null;
                 const sizeMatch = detailPage.data.match(/(\d+(\.\d+)?)\s?(GB|MB|KB)/i);
@@ -219,7 +233,7 @@ async function searchCorsaro(title, year, type, reqSeason, reqEpisode) {
                     source: "Corsaro"
                 };
             } catch { return null; }
-        });
+        }));
 
         return (await Promise.all(promises)).filter(Boolean);
     } catch { return []; }
@@ -243,7 +257,7 @@ async function searchKnaben(title, year, type, reqSeason, reqEpisode) {
         const { data } = await axios.post(CONFIG.KNABEN_API, payload, {
             headers: {
                 'Content-Type': 'application/json',
-                'User-Agent': CONFIG.HEADERS['User-Agent']
+                'User-Agent': getRandomUA()
             },
             timeout: CONFIG.TIMEOUT
         });
@@ -262,8 +276,7 @@ async function searchKnaben(title, year, type, reqSeason, reqEpisode) {
 
             const sizeBytes = item.bytes ? parseInt(item.bytes) : 0;
             const sizeStr = bytesToSize(sizeBytes);
-            const upperName = item.title.toUpperCase();
-            const strictItaCheck = /\b(ITA|ITALIAN|ITALIANO|SUBITA|SUB-ITA)\b/.test(upperName);
+            const strictItaCheck = isItalianResult(item.title);
 
             if (strictItaCheck && checkYear(item.title, year, type) && isCorrectFormat(item.title, reqSeason, reqEpisode)) {
                 results.push({
@@ -286,7 +299,12 @@ async function searchKnaben(title, year, type, reqSeason, reqEpisode) {
 async function searchUindex(title, year, type, reqSeason, reqEpisode) {
     try {
         const url = `https://uindex.org/search.php?search=${encodeURIComponent(clean(title) + " ITA")}&c=0`;
-        const { data } = await axios.get(url, { headers: CONFIG.HEADERS, httpsAgent, timeout: CONFIG.TIMEOUT, validateStatus: s => s < 500 });
+        const { data } = await axios.get(url, { 
+            headers: { 'User-Agent': getRandomUA() }, 
+            httpsAgent, 
+            timeout: CONFIG.TIMEOUT, 
+            validateStatus: s => s < 500 
+        });
         if (!data || typeof data !== 'string') return [];
 
         const rows = data.split(/<tr[^>]*>/gi).filter(row => row.includes('magnet:?xt=urn:btih:') && row.includes('<td'));
@@ -320,7 +338,7 @@ async function searchNyaa(title, year, type, reqSeason, reqEpisode) {
         if (!q.toLowerCase().includes("ita")) q += " ita";
         const url = `https://nyaa.iss.ink/?f=0&c=0_0&q=${encodeURIComponent(q)}&s=seeders&o=desc`;
 
-        const { data } = await cfGet(url, { headers: CONFIG.HEADERS, httpsAgent, timeout: CONFIG.TIMEOUT });
+        const { data } = await cfGet(url, { timeout: CONFIG.TIMEOUT });
         const $ = cheerio.load(data);
         const results = [];
 
@@ -345,6 +363,7 @@ async function searchTPB(title, year, type, reqSeason, reqEpisode) {
         const q = `${clean(title)} ${type === 'tv' ? '' : (year || "")} ITA`;
         const { data } = await axios.get("https://apibay.org/q.php", {
             params: { q, cat: type === 'tv' ? 0 : 201 },
+            headers: { 'User-Agent': getRandomUA() },
             timeout: CONFIG.TIMEOUT
         }).catch(() => ({ data: [] }));
 
@@ -373,7 +392,7 @@ async function search1337x(title, year, type, reqSeason, reqEpisode) {
         const domain = "https://1337x.ninjaproxy1.com";
         const url = `${domain}/search/${encodeURIComponent(clean(title) + " ITA")}/1/`;
 
-        const { data } = await cfGet(url, { timeout: CONFIG.TIMEOUT, headers: CONFIG.HEADERS, httpsAgent });
+        const { data } = await cfGet(url, { timeout: CONFIG.TIMEOUT });
         const $ = cheerio.load(data || "");
         const candidates = [];
 
@@ -387,9 +406,10 @@ async function search1337x(title, year, type, reqSeason, reqEpisode) {
             }
         });
 
-        const promises = candidates.map(async (cand) => {
+        const limit = limitConcurrency(4);
+        const promises = candidates.map(cand => limit(async () => {
             try {
-                const { data } = await cfGet(cand.link, { timeout: 3000, headers: CONFIG.HEADERS, httpsAgent });
+                const { data } = await cfGet(cand.link, { timeout: 3000 });
                 const $d = cheerio.load(data);
                 const magnet = $d("a[href^='magnet:?']").first().attr("href");
                 const sizeStr = $d("ul.list li")
@@ -406,7 +426,7 @@ async function search1337x(title, year, type, reqSeason, reqEpisode) {
                     source: "1337x"
                 } : null;
             } catch { return null; }
-        });
+        }));
 
         return (await Promise.all(promises)).filter(Boolean);
 
@@ -416,7 +436,7 @@ async function search1337x(title, year, type, reqSeason, reqEpisode) {
 async function searchTorrentGalaxy(title, year, type, reqSeason, reqEpisode) {
     try {
         const url = `https://torrentgalaxy.to/torrents.php?search=${encodeURIComponent(clean(title) + " ITA")}&sort=seeders&order=desc`;
-        const { data } = await cfGet(url, { timeout: CONFIG.TIMEOUT, headers: CONFIG.HEADERS, httpsAgent });
+        const { data } = await cfGet(url, { timeout: CONFIG.TIMEOUT });
         const $ = cheerio.load(data);
         const results = [];
 
@@ -439,7 +459,7 @@ async function searchTorrentGalaxy(title, year, type, reqSeason, reqEpisode) {
 async function searchBitSearch(title, year, type, reqSeason, reqEpisode) {
     try {
         const url = `https://bitsearch.to/search?q=${encodeURIComponent(clean(title) + " ITA")}`;
-        const { data } = await cfGet(url, { timeout: CONFIG.TIMEOUT, headers: CONFIG.HEADERS, httpsAgent });
+        const { data } = await cfGet(url, { timeout: CONFIG.TIMEOUT });
 
         const $ = cheerio.load(data || "");
         const results = [];
@@ -462,7 +482,7 @@ async function searchBitSearch(title, year, type, reqSeason, reqEpisode) {
 async function searchLime(title, year, type, reqSeason, reqEpisode) {
     try {
         const url = `https://limetorrents.info/search/all/${encodeURIComponent(clean(title) + " ITA")}/seeds/1/`;
-        const { data } = await cfGet(url, { timeout: CONFIG.TIMEOUT, headers: CONFIG.HEADERS, httpsAgent });
+        const { data } = await cfGet(url, { timeout: CONFIG.TIMEOUT });
 
         const $ = cheerio.load(data || "");
         const candidates = [];
@@ -482,9 +502,10 @@ async function searchLime(title, year, type, reqSeason, reqEpisode) {
             }
         });
 
-        const promises = candidates.slice(0, 5).map(async (cand) => {
+        const limit = limitConcurrency(4);
+        const promises = candidates.slice(0, 5).map(cand => limit(async () => {
             try {
-                const { data } = await cfGet(cand.link, { timeout: 3000, headers: CONFIG.HEADERS, httpsAgent });
+                const { data } = await cfGet(cand.link, { timeout: 3000 });
                 const magnet = cheerio.load(data)("a[href^='magnet:?']").first().attr("href");
 
                 return magnet ? {
@@ -497,7 +518,7 @@ async function searchLime(title, year, type, reqSeason, reqEpisode) {
                 } : null;
 
             } catch { return null; }
-        });
+        }));
 
         return (await Promise.all(promises)).filter(Boolean);
 
@@ -510,7 +531,7 @@ async function searchGlo(title, year, type, reqSeason, reqEpisode) {
         if (!q.toLowerCase().includes("ita")) q += " ITA";
         const url = `https://glotorrents.com/search_results.php?search=${encodeURIComponent(q)}&incldead=0&sort=seeders&order=desc`;
 
-        const { data } = await cfGet(url, { headers: CONFIG.HEADERS, httpsAgent, timeout: CONFIG.TIMEOUT });
+        const { data } = await cfGet(url, { timeout: CONFIG.TIMEOUT });
         const $ = cheerio.load(data);
         const candidates = [];
 
@@ -531,9 +552,10 @@ async function searchGlo(title, year, type, reqSeason, reqEpisode) {
             }
         });
 
-        const promises = candidates.slice(0, 5).map(async (cand) => {
+        const limit = limitConcurrency(4);
+        const promises = candidates.slice(0, 5).map(cand => limit(async () => {
             try {
-                const { data } = await cfGet(cand.detailLink, { headers: CONFIG.HEADERS, httpsAgent, timeout: 3000 });
+                const { data } = await cfGet(cand.detailLink, { timeout: 3000 });
                 const magnet = cheerio.load(data)('a[href^="magnet:"]').attr('href');
                 if (magnet) {
                     return {
@@ -547,7 +569,7 @@ async function searchGlo(title, year, type, reqSeason, reqEpisode) {
                 }
             } catch {}
             return null;
-        });
+        }));
 
         return (await Promise.all(promises)).filter(Boolean);
 
@@ -570,10 +592,15 @@ CONFIG.ENGINES = [
 
 // --- MAIN AGGREGATOR ---
 async function searchMagnet(title, year, type, imdbId) {
+    // Attempt to update trackers passively (non-blocking for this request, or await if you prefer freshness over speed)
+    // await updateTrackers(); 
+
     const { season: reqSeason, episode: reqEpisode } = parseImdbId(imdbId);
 
+    // Wrap each engine in a race with a timeout
     const promises = CONFIG.ENGINES.map(engine =>
-        engine(title, year, type, reqSeason, reqEpisode)
+        withTimeout(engine(title, year, type, reqSeason, reqEpisode), CONFIG.TIMEOUT + 500)
+            .catch(e => []) // If timeout or error, return empty array immediately
     );
 
     const resultsArrays = await Promise.allSettled(promises);
@@ -607,4 +634,4 @@ async function searchMagnet(title, year, type, imdbId) {
     return finalResults;
 }
 
-module.exports = { searchMagnet, CONFIG };
+module.exports = { searchMagnet, CONFIG, updateTrackers };
