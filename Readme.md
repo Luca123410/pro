@@ -80,7 +80,7 @@ Il modo più semplice, pulito e professionale per avviare Leviathan Core.
 
 ```bash
 
-# 📂 Clona il repository
+#📂 Clona il repository
 git clone https://github.com/tuutente/Leviathan-Core.git
 cd Leviathan-Core
 ```
