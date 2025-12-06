@@ -43,9 +43,11 @@
     <img src="https://img.shields.io/badge/☢️_Magnet-Fusion_Engine-000?style=for-the-badge&labelColor=00eaff" />
   </p>
 
-  <br>
-  
-  <img src="https://user-images.githubusercontent.com/74038190/212257468-1e9a91f1-b626-4baa-b15d-5c385dfa7ed2.gif" width="100%">
+  <hr style="border: 0; height: 1px; background: linear-gradient(to right, transparent, #00eaff, transparent); margin: 30px auto; width: 80%;">
+
+  <p style="color: #555; font-size: 0.8rem;">
+    ENGINEERED FOR THE DEEP WEB 
+  </p>
 
 </div>
 
