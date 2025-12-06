@@ -2,9 +2,9 @@
  * addon.js
  * Corsaro Brain — LEVIATHAN EDITION (AI Enhanced)
  * * Changelog:
- * - INTEGRATO: Modulo AI Query Expansion (Sostituisce le query statiche)
- * - INTEGRATO: Modulo NLP Parser (Sostituisce isTitleSafe e Regex rigide)
- * - REMOVED: Vecchie logiche di filtro stringa e query builder manuali.
+ * - FIXED: Passaggio parametri Stagione/Episodio a smartMatch (Risolve "Nessun Risultato" per le serie).
+ * - FIXED: Filtro "Lisa Frankenstein" specifico.
+ * - FIXED: Tolleranza anno ±1.
  */
 
 const express = require("express");
@@ -14,16 +14,15 @@ const path = require("path");
 const axios = require("axios");
 const Bottleneck = require("bottleneck");
 
-// --- IMPORTIAMO I NUOVI MODULI SMART (AI & NLP) ---
+// --- IMPORTIAMO I NUOVI MODULI SMART ---
 const { generateSmartQueries } = require("./ai_query");
 const { smartMatch } = require("./smart_parser");
+// IMPORTIAMO IL RANKING ESTERNO
+const { rankAndFilterResults } = require("./ranking");
 
-//  IMPORTIAMO IL CONVERTITORE
+//  IMPORTIAMO ALTRI MODULI
 const { tmdbToImdb } = require("./id_converter");
-//  IMPORTIAMO IL GESTORE KITSU
 const kitsuHandler = require("./kitsu_handler");
-
-//  IMPORTIAMO I MODULI DEBRID
 const RD = require("./debrid/realdebrid");
 const AD = require("./debrid/alldebrid");
 const TB = require("./debrid/torbox");
@@ -31,11 +30,10 @@ const TB = require("./debrid/torbox");
 // --- CONFIGURAZIONE ---
 const CONFIG = {
   CINEMETA_URL: "https://v3-cinemeta.strem.io",
-  REAL_SIZE_FILTER: 80 * 1024 * 1024, // Filtra file < 80MB (spesso fake)
+  REAL_SIZE_FILTER: 80 * 1024 * 1024, // Filtra file < 80MB
   TIMEOUT_TMDB: 2000,
   SCRAPER_TIMEOUT: 6000, 
   MAX_RESULTS: 40, 
-  // FUZZY_THRESHOLD rimosso perché gestito internamente da smart_parser.js
 };
 
 // --- LIMITERS ---
@@ -209,7 +207,7 @@ async function getMetadata(id, type) {
     
     return cData?.meta ? {
       title: cData.meta.name,
-      originalTitle: cData.meta.name, // Cinemeta non sempre ha l'originale, ma va bene
+      originalTitle: cData.meta.name, 
       year: cData.meta.year?.split("–")[0],
       imdb_id: tmdbId.split(":")[0], 
       isSeries: type === "series",
@@ -270,7 +268,6 @@ async function generateStream(type, id, config, userConfStr) {
           const tmdbId = parts[1];
           const imdbId = await tmdbToImdb(tmdbId, type);
           if (imdbId) {
-              console.log(`✅ ID Converted: ${tmdbId} -> ${imdbId}`);
               if (type === "series" && parts.length >= 4) {
                   const s = parts[2];
                   const e = parts[3];
@@ -290,7 +287,6 @@ async function generateStream(type, id, config, userConfStr) {
           const kitsuEp = parts[2] ? parseInt(parts[2]) : 1;
           const kData = await kitsuHandler(kitsuId);
           if (kData && kData.imdbID) {
-              console.log(`🦊 Kitsu Converted: ${kitsuId} -> ${kData.imdbID}`);
               if (kData.type === 'series' || type === 'series') {
                   const s = kData.season || 1; 
                   finalId = `${kData.imdbID}:${s}:${kitsuEp}`;
@@ -305,11 +301,10 @@ async function generateStream(type, id, config, userConfStr) {
   if (!meta) return { streams: [] };
   
   // 2. 🔥 AI QUERY EXPANSION 🔥
-  // Sostituisce la vecchia logica di buildQueries manuali
   const queries = generateSmartQueries(meta);
   const onlyIta = config.filters?.onlyIta !== false;
 
-  console.log(`\n🧠 [AI-CORE] Cerco "${meta.title}" (${meta.year}): ${queries.length} varianti generate.`);
+  console.log(`\n🧠 [AI-CORE] Cerco "${meta.title}" (${meta.year}): ${queries.length} varianti.`);
 
   let promises = [];
   queries.forEach(q => {
@@ -326,25 +321,55 @@ async function generateStream(type, id, config, userConfStr) {
 
   let resultsRaw = (await Promise.all(promises)).flat();
 
-  // 3. 🔥 NLP FILTERING 🔥
-  // Sostituisce isTitleSafe (regex) con smartMatch (NLP/Fuzzy)
+  // 3. 🔥 FILTERING (NLP + FIX LISA + TAGS) 🔥
   resultsRaw = resultsRaw.filter(item => {
     if (!item?.magnet) return false;
     
-    // Filtro semantico intelligente
-    const isSemanticallySafe = smartMatch(meta.title, item.title, meta.isSeries);
+    // --- BLOCCO LOGICO BILANCIATO ---
+    const fileYearMatch = item.title.match(/\b(19|20)\d{2}\b/);
+    if (fileYearMatch) {
+        const fileYear = parseInt(fileYearMatch[0]);
+        const metaYear = parseInt(meta.year);
+
+        // 1. TOLLERANZA ANNO: Accetta +/- 1 anno (Es. Cerca 2025, accetta 2024 e 2026)
+        if (Math.abs(fileYear - metaYear) > 1) return false;
+        
+        // 2. FIX LISA FRANKENSTEIN: Se il titolo ha "Lisa" ma il meta NO, scarta.
+        if (/\bLisa\b/i.test(item.title) && !/\bLisa\b/i.test(meta.title)) {
+            return false;
+        }
+
+        // 3. FIX PREFISSI INTELLIGENTE
+        const tLower = item.title.toLowerCase();
+        const mLower = meta.title.toLowerCase();
+        const idx = tLower.indexOf(mLower);
+        
+        if (idx > 0) {
+            const prefix = tLower.substring(0, idx).trim();
+            if (/[a-z0-9]$/i.test(prefix)) {
+                const words = prefix.split(/[^a-z0-9]+/);
+                const lastWord = words[words.length - 1];
+                const badPrefixes = ["lisa", "bride", "son", "curse", "house", "i", "return", "revenge"];
+                if (badPrefixes.includes(lastWord)) return false;
+            }
+        }
+    }
+    // ------------------------------------------------
+
+    // 🔥 FIX: Passiamo Stagione ed Episodio al parser!
+    // Prima mancavano e quindi il controllo Strict veniva saltato.
+    const isSemanticallySafe = smartMatch(meta.title, item.title, meta.isSeries, meta.season, meta.episode);
     if (!isSemanticallySafe) return false;
 
     if (onlyIta && !isSafeForItalian(item)) return false;
     return true;
   });
 
-  // Fallback se pochi risultati (usa sempre logica smart)
+  // Fallback se pochi risultati
   if (resultsRaw.length <= 5) {
     const extPromises = FALLBACK_SCRAPERS.map(fb => {
         return LIMITERS.scraper.schedule(async () => {
             try {
-                // Usa la prima query smart (la più probabile)
                 return await withTimeout(fb.searchMagnet(queries[0], meta.year, type, finalId), CONFIG.SCRAPER_TIMEOUT);
             } catch (err) { return []; }
         });
@@ -359,8 +384,10 @@ async function generateStream(type, id, config, userConfStr) {
         const extResultsRaw = await Promise.race([searchPromise, timeoutPromise]);
         
         if (Array.isArray(extResultsRaw)) {
-            // Applica lo stesso filtro NLP anche ai fallback
-            const filteredExt = extResultsRaw.flat().filter(item => smartMatch(meta.title, item.title, meta.isSeries));
+            // Anche qui applichiamo il fix dei parametri
+            const filteredExt = extResultsRaw.flat().filter(item => 
+                smartMatch(meta.title, item.title, meta.isSeries, meta.season, meta.episode)
+            );
             resultsRaw = [...resultsRaw, ...filteredExt];
         }
     } catch (e) {}
@@ -383,8 +410,8 @@ async function generateStream(type, id, config, userConfStr) {
   
   if (!cleanResults.length) return { streams: [{ name: "⛔", title: "Nessun risultato trovato" }] };
 
-  // Ranking e Sort
-  const ranked = rankAndFilterResults(cleanResults, meta).slice(0, CONFIG.MAX_RESULTS);
+  // Ranking e Sort (Usa ranking.js)
+  const ranked = rankAndFilterResults(cleanResults, meta, config).slice(0, CONFIG.MAX_RESULTS);
   
   // Risoluzione Link Debrid
   const rdPromises = ranked.map(item => {
@@ -397,46 +424,13 @@ async function generateStream(type, id, config, userConfStr) {
   return { streams }; 
 }
 
-// Funzione interna di ranking
-function rankAndFilterResults(results, meta) {
-  return results.map(item => {
-    const info = extractStreamInfo(item.title, item.source);
-    let score = 0;
-    
-    // Punti base lingua
-    if (info.lang.includes("ITA")) score += 5000;
-    else if (info.lang.includes("MULTI")) score += 3000;
-    
-    // Qualità
-    if (info.quality === "4K") score += 1200;
-    else if (info.quality === "1080p") score += 800;
-    
-    // Bonus Fonte
-    if (item.source === "Corsaro") score += 1000;
-    
-    // Bonus Episodio Esatto (IMPORTANTE)
-    const sStr = String(meta.season).padStart(2,'0');
-    const eStr = String(meta.episode).padStart(2,'0');
-    const regexEp = new RegExp(`S${sStr}[^0-9]*E${eStr}`, "i");
-    
-    if (meta.isSeries && regexEp.test(item.title)) {
-        score += 3000;
-    }
-    
-    // Penalità CAM
-    if (/cam|ts|telesync/i.test(item.title)) score -= 10000;
-    
-    return { item, score };
-  }).sort((a, b) => b.score - a.score).map(x => x.item);
-}
-
 // --- ROUTES ---
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 
 app.get("/:conf/manifest.json", (req, res) => { 
     const m = { 
-        id: "org.corsaro.brain.v31.0", // Bump Version
-        version: "31.0.0", 
+        id: "org.corsaro.brain.v31.3", 
+        version: "31.3.0", 
         name: "Leviathan (AI-Core)", 
         description: "Deep Sea Streaming Core | AI Powered | ITA Priority", 
         logo: "https://img.icons8.com/ios-filled/500/00f2ea/dragon.png",
@@ -464,4 +458,4 @@ function getConfig(configStr) { try { return JSON.parse(Buffer.from(configStr, "
 function withTimeout(promise, ms) { return Promise.race([promise, new Promise(r => setTimeout(() => r([]), ms))]); }
 
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`🚀 Leviathan (AI-Core) v31.0 attivo su porta ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Leviathan (AI-Core) v31.3 attivo su porta ${PORT}`));
