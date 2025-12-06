@@ -1,33 +1,4 @@
-<div align="center">
-
-  <img src="https://api.iconify.design/fa6-solid:dragon.svg?color=%2300f2ea&width=160" alt="Leviathan Logo" />
-
-  <h1 style="font-size: 4rem; letter-spacing: -3px; margin-top: 0; margin-bottom: 10px; text-transform: uppercase;">
-    LEVIATHAN
-  </h1>
-
-  <p>
-    <img src="https://img.shields.io/badge/Real_Debrid-Supported-A2B9F0?style=for-the-badge&logo=realdebrid&logoColor=black" />
-    <img src="https://img.shields.io/badge/AllDebrid-Supported-F5A623?style=for-the-badge&logo=alldebrid&logoColor=white" />
-    <img src="https://img.shields.io/badge/TorBox-Supported-6E45E2?style=for-the-badge&logo=torbox&logoColor=white" />
-  </p>
-
-  <p>
-    <img src="https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" />
-    <img src="https://img.shields.io/badge/Architecture-Multi_Provider-blueviolet?style=for-the-badge" />
-    <img src="https://img.shields.io/badge/Status-OPERATIONAL-success?style=for-the-badge" />
-  </p>
-
-  <h3>
-    🇮🇹 Il Metamotore Torrent Italiano più potente mai creato.
-  </h3>
-
-  <p>
-    <code>Adaptive Timeout</code> ⚡ <code>Italian-First Engine</code> ⚡ <code>Anti-Bot Intelligence</code> ⚡ <code>Magnet Boosting</code>
-  </p>
-
-</div>
-
+<div align="center"> <img src="https://api.iconify.design/fa6-solid:dragon.svg?color=%2300f2ea&width=180" alt="Leviathan Logo" /> <h1 style="font-size: 4.2rem; letter-spacing: -3px; margin: 0; text-transform: uppercase; font-weight: 900;"> LEVIATHAN CORE </h1> <div style="margin-top: -10px; font-size: 1.2rem; opacity: 0.9;"> <em>Meta-Torrent Engine • Italian Intelligence • Zero-Limits</em> </div> <br> <p> <img src="https://img.shields.io/badge/Real%20Debrid-FULL%20SUPPORT-A2B9F0?style=for-the-badge&logo=realdebrid&logoColor=000" /> <img src="https://img.shields.io/badge/AllDebrid-ENABLED-F5A623?style=for-the-badge&logo=alldebrid&logoColor=fff" /> <img src="https://img.shields.io/badge/TorBox-INTEGRATED-6E45E2?style=for-the-badge" /> </p> <p> <img src="https://img.shields.io/badge/Node.js-18%2B-339933?style=for-the-badge&logo=node.js&logoColor=white" /> <img src="https://img.shields.io/badge/Engine-Multi%20Provider%20v3-blueviolet?style=for-the-badge" /> <img src="https://img.shields.io/badge/Status-ONLINE-success?style=for-the-badge" /> </p> <h3 style="font-weight: 700; font-size: 1.6rem; margin-top: 20px;"> 🇮🇹 Il Metamotore Torrent Italiano Più Potente Mai Realizzato </h3> <p style="max-width: 700px; font-size: 1.1rem;"> <code>Italian-First Filtering</code> ⚡ <code>Adaptive Timeout AI</code> ⚡ <code>Stealth Anti-Bot Layer</code> ⚡ <code>Magnet Amplification Engine</code> </p> <hr style="border: 0; height: 1px; background: linear-gradient(to right, transparent, #00f2ea, transparent); margin: 30px 0; width: 80%;" /> </div>
 
 ---
 
