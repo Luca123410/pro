@@ -80,12 +80,11 @@ Il modo più semplice, pulito e professionale per avviare Leviathan Core.
 
 ```bash
 
-$ 📂 Clonando il repository...
-$ git clone https://github.com/tuutente/Leviathan-Core.git
+📂  Clona il repository:
+git clone https://github.com/tuutente/Leviathan-Core.git
 
-$ ➤ Entrando nella cartella...
-$ cd Leviathan-Core
-
+➡️  Entra nella cartella:
+cd Leviathan-Core
 
 ```
 # 🐳 Avvia Leviathan tramite Docker Compose
