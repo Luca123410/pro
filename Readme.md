@@ -1,17 +1,8 @@
-<div align="center">
+🐉 Leviathan – ItaMagnet Scraper
 
-# 🐉 LEVIATHAN CORE
+Deep-Search Torrent Engine optimized for Italian content
 
-<img src="https://img.shields.io/badge/Project-Leviathan-darkred?style=for-the-badge&logo=dragon&logoColor=white" />
-<img src="https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" />
-<img src="https://img.shields.io/badge/Status-ACTIVE-success?style=for-the-badge" />
-<img src="https://img.shields.io/badge/Engine-V2.0-blueviolet?style=for-the-badge" />
-
-<h3>🇮🇹 Il Metamotore Torrent Italiano più potente mai creato.</h3>
-
-<b>Adaptive Timeout • Italian-First Engine • Anti-Bot Intelligence • Magnet Boosting</b>
-
-</div>
+<div align="center"> <img src="https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=node.js" alt="Node.js" /> <img src="https://img.shields.io/badge/Status-ACTIVE-success?style=for-the-badge" alt="Status: Active" /> <img src="https://img.shields.io/badge/Language-JavaScript-F7DF1E?style=for-the-badge&logo=javascript" alt="JavaScript" /> <img src="https://img.shields.io/badge/Engine-Leviathan-Core-darkred?style=for-the-badge" alt="Leviathan Core" /> </div>
 
 ---
 
