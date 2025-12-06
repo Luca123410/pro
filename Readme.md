@@ -7,39 +7,7 @@
         <stop offset="100%" stop-color="#008a92"/>
       </linearGradient>
 
-      <!-- Glitch -->
-      <filter id="glitch">
-        <feColorMatrix type="matrix" values="1 0 0 0 0
-                                             0 1 0 0 0
-                                             0 0 1 0 0
-                                             0 0 0 1 0"/>
-        <feOffset dx="-3" result="r"/>
-        <feOffset dx="3"  result="g"/>
-        <feBlend in="SourceGraphic" in2="r" mode="screen"/>
-        <feBlend in="SourceGraphic" in2="g" mode="screen"/>
-      </filter>
-
-      <!-- Serpent pulse -->
-      <filter id="serpent">
-        <feTurbulence id="turb" type="fractalNoise" baseFrequency="0.004" numOctaves="3" seed="2"/>
-        <feDisplacementMap in="SourceGraphic" scale="25"/>
-        <animate xlink:href="#turb" attributeName="baseFrequency" dur="8s"
-                 values="0.004;0.008;0.003;0.006;0.004" repeatCount="indefinite"/>
-      </filter>
-    </defs>
-
-    <text x="50%" y="50%" text-anchor="middle" dy=".35em"
-          style="font-family: 'Orbitron', sans-serif;
-                 font-weight: 900;
-                 font-size: 60px;
-                 fill: url(#neon);
-                 filter: url(#glitch) url(#serpent);
-                 text-transform: uppercase;">
-      LEVIATHAN
-    </text>
-  </svg>
-</p>
-
+ 
 
 
 ---
