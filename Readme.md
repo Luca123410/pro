@@ -99,7 +99,6 @@ docker logs -f leviathan-core
 ```
 Nota: Il servizio sarà accessibile all'indirizzo http://localhost:7000 (o alla porta configurata nel docker-compose.yml).
 
-```
 
 ---
 
