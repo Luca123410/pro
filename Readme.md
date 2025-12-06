@@ -72,32 +72,23 @@ Leviathan bilancia il carico su questi nodi:
 
 ---
 
-📦 Deployment Protocol
-<div align="center"> <img src="https://img.shields.io/badge/Docker-Container-2496ED?style=for-the-badge&logo=docker&logoColor=white" /> <img src="https://img.shields.io/badge/Git-Clone-F05032?style=for-the-badge&logo=git&logoColor=white" /> <img src="https://img.shields.io/badge/System-Ready-success?style=for-the-badge" /> </div>
+📦 Installazione
 
-Leviathan è progettato per operare in container isolati. Segui la procedura di inizializzazione per avviare il nucleo.
+🔥 Metodo 1 — Clone & Docker Compose (Full Auto-Deploy)
 
-1. 📡 Inizializzazione Repository
-Clona il codice sorgente nel tuo ambiente locale.
+Il modo più semplice, pulito e professionale per avviare Leviathan Core.
 
-```bash
-git clone https://github.com/tuo-user/leviathan-core.git
-cd leviathan-core
+# 📂 Clona il repository
+git clone https://github.com/tuutente/Leviathan-Core.git
+cd Leviathan-Core
 
-```
-2. 🐳 Container Ignition
-Compila l'immagine e avvia il demone in background tramite Docker Compose.
+# 🐳 Avvia Leviathan tramite Docker Compose
+docker compose up -d --build
 
-```bash
-docker-compose up -d --build
-```
-3. 🖥️ System Status
-Verifica che il Leviathan sia emerso correttamente monitorando i log in tempo reale.
+> ✔️ Avvio completamente automatizzato
+✔️ Nessuna configurazione manuale
+✔️ Perfetto per server, VPS, NAS, ambienti isolati
 
-```bash
-docker logs -f leviathan-core
-```
-Nota: Il servizio sarà accessibile all'indirizzo http://localhost:7000 (o alla porta configurata nel docker-compose.yml).
 
 
 ---
