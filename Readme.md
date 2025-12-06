@@ -65,26 +65,32 @@ Il core, sviluppato in **Node.js**, orchestra scansioni parallele sui principali
 
 ---
 
-## 🐉 Perché Leviathan È Diverso?
+## 👽 Core Capabilities
 
-### 1. 🇮🇹 Italian First (ITA ONLY Engine)
-L'algoritmo `isItalianResult()` non si limita a cercare "ITA". Analizza il nome del file scartando i falsi positivi e cercando pattern specifici:
-* `ITA`, `AC3`, `DTS`, `MULTI`, `SUB-ITA`
-* Esclusione automatica di `CAM`, `TS` e fake files.
+> Il sistema si distingue per un approccio algoritmico proprietario che privilegia la **precisione semantica** sulla forza bruta.
 
-### 2. 🏎️ Adaptive Latency Engine
-Leviathan sa che non tutti i siti sono uguali. Modula la pazienza in base alla fonte:
-* **🟢 Fast Lane (3000ms):** Per API JSON e siti ottimizzati (Knaben, TPB, Corsaro Nero).
-* **🔵 Deep Scan (5000ms):** Per il crawling pesante di siti HTML complessi o protetti (1337x, Galaxy).
+### 1. 🇮🇹 ITA-Strict Validation Protocol
+L'algoritmo `isItalianResult()` non esegue una semplice ricerca di stringhe. Applica un filtro **semantico** che analizza il payload per garantire la pertinenza.
+* **Positive Matching:** Targetizza tag specifici come `AC3`, `DTS`, `MULTI`, `SUB-ITA`.
+* **False Positive Kill-Switch:** Elimina automaticamente release `CAM`, `TS`, e fake files o re-encode di bassa qualità.
+* **Risultato:** Dataset pulito al 99.9%. Se non è italiano, non passa.
 
-### 3. 🛡️ Anti-Bot Intelligence
-* Gestione automatica delle challenge Cloudflare.
-* Rotazione randomizzata degli `User-Agent`.
-* Fallback intelligenti in caso di errore di rete.
+### 2. ⚡ Adaptive Latency Architecture
+Leviathan non tratta tutte le sorgenti allo stesso modo. Utilizza un'euristica predittiva per modulare i timeout:
+* 🟢 **Fast Lane (3000ms):** Canale prioritario per API JSON e indici ottimizzati *(Knaben, TPB, Corsaro)*.
+* 🔵 **Deep Scan (5000ms):** Scansione profonda per portali HTML complessi o protetti *(1337x, Galaxy)*.
+* *Il sistema bilancia automaticamente velocità e completezza.*
 
-### 4. 🧠 Smart Parsing & Injection
-* Riconoscimento automatico: `S01E01` / `1x01` / `Stagione 1`.
-* **Magnet Boosting:** Inietta automaticamente tracker come *OpenTrackr*, *Quad Tracker* e *Lubitor* per massimizzare la velocità di download immediata.
+### 3. 🛡️ Advanced WAF Evasion
+Un layer di sicurezza integrato gestisce l'interazione con i sistemi di protezione perimetrale (Web Application Firewalls).
+* **Cloudflare Bypass:** Risoluzione automatica delle challenge JS tramite `cloudscraper`.
+* **Identity Rotation:** Rotazione dinamica degli `User-Agent` per simulare traffico organico.
+* **Resilience:** Fallback intelligenti che scartano i nodi morti senza interrompere il ciclo di ricerca.
+
+### 4. 🧬 Metadata Fusion & Tracker Injection
+Non si limita a trovare il link. Lo potenzia.
+* **Smart Parsing:** Normalizzazione regex per Stagioni/Episodi (`S01E01`, `1x01`) indipendentemente dal formato sorgente.
+* **Magnet Boosting:** Inietta nel payload una lista curata di **Tracker UDP Tier-1** *(OpenTrackr, Quad, Lubitor)* per massimizzare la velocità di aggancio dei peer e ridurre il tempo di pre-buffering.
 
 ---
 
