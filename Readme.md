@@ -1,10 +1,4 @@
-<div align="center">
-  <img src="https://capsule-render.vercel.app/api?type=waving&height=250&color=0:050a14,100:00384d&text=LEVIATHAN%20|%20RD&fontColor=00f2ea&fontSize=70&fontAlign=50&fontAlignY=40&animation=fadeIn&desc=DEEP%20SEA%20STREAMING%20CORE&descSize=20&descAlignY=60&descAlign=50&fontAlign=50" alt="Leviathan Header" />
-</div>
-
-<div align="center">
-
-  <img src="https://api.iconify.design/fa6-solid:dragon.svg?color=%2300f2ea&width=150" alt="Logo" />
+ <img src="https://api.iconify.design/fa6-solid:dragon.svg?color=%2300f2ea&width=150" alt="Logo" />
 
   <h1>LEVIATHAN</h1>
 
