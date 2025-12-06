@@ -1,17 +1,42 @@
 <div align="center">
-  <img src="https://api.iconify.design/fa6-solid:dragon.svg?color=%2300f2ea&width=140" alt="Leviathan Logo" />
 
-  <h1 style="margin-top: 10px;">LEVIATHAN CORE</h1>
+  <!-- LOGO -->
+  <img 
+    src="https://api.iconify.design/fa6-solid:dragon.svg?color=%2300f2ea&width=150" 
+    alt="Leviathan Logo"
+    style="margin-bottom: 15px;"
+  />
 
-  <img src="https://img.shields.io/badge/Project-Leviathan-darkred?style=for-the-badge&logo=dragon&logoColor=white" />
-  <img src="https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" />
-  <img src="https://img.shields.io/badge/Status-ACTIVE-success?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/Engine-V2.0-blueviolet?style=for-the-badge" />
+  <!-- TITLE -->
+  <h1 style="font-size: 3rem; margin: 0; font-weight: 900;">
+    🐉 LEVIATHAN CORE
+  </h1>
 
-  <h3>🇮🇹 Il Metamotore Torrent Italiano più potente mai creato.</h3>
+  <!-- TAGLINE -->
+  <h3 style="margin-top: 5px; font-weight: 600;">
+    🇮🇹 Il Metamotore Torrent Italiano più potente mai creato.
+  </h3>
 
-  <b>Adaptive Timeout • Italian-First Engine • Anti-Bot Intelligence • Magnet Boosting</b>
+  <!-- SUBTEXT -->
+  <p style="font-size: 15px; margin-top: -5px;">
+    <b>Adaptive Timeout • Italian-First Engine • Anti-Bot Intelligence • Magnet Boosting</b>
+  </p>
+
+  <!-- BADGES -->
+  <p>
+    <img src="https://img.shields.io/badge/Project-LEVIATHAN-001f3f?style=for-the-badge&logo=dragon&logoColor=00eaff" />
+    <img src="https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" />
+    <img src="https://img.shields.io/badge/Status-ACTIVE-brightgreen?style=for-the-badge" />
+    <img src="https://img.shields.io/badge/Engine-V2.0-8a2be2?style=for-the-badge" />
+  </p>
+
+  <!-- MOTTO -->
+  <h4 style="color:#00eaff; font-weight:700; margin-top:10px;">
+    "Velocità. Precisione. Aggressività."
+  </h4>
+
 </div>
+
 
 ---
 
