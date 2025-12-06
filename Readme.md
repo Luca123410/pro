@@ -96,20 +96,19 @@ Non si limita a trovare il link. Lo potenzia.
 
 ## 🌐 Leviathan Network (Motori Supportati)
 
-Leviathan bilancia il carico su questi nodi:
+eviathan distribuisce le query su nodi ottimizzati per prestazioni, affidabilità e stealth:
 
-| Motore | Area | Timeout | Modalità | Stato |
-| :--- | :---: | :---: | :---: | :---: |
-| **Il Corsaro Nero** | 🇮🇹 ITA | **3000ms** | ⚡ Fast Lane | 🟢 ONLINE |
-| **Knaben** | 🌍 Global | **3000ms** | ⚡ API Json | 🟢 ONLINE |
-| **The Pirate Bay** | 🌍 Global | **3000ms** | ⚡ API Json | 🟢 ONLINE |
-| **UIndex** | 🌍 Global | **4000ms** | 🔹 Aggregator | 🟢 ONLINE |
-| **Nyaa** | 🇯🇵 Anime | **5000ms** | 🐢 Deep Scan | 🟢 ONLINE |
-| **TorrentGalaxy** | 🌍 Global | **5000ms** | 🐢 Deep Scan | 🟢 ONLINE |
-| **BitSearch** | 🌍 Global | **5000ms** | 🐢 Deep Scan | 🟢 ONLINE |
-| **LimeTorrents** | 🌍 Global | **5000ms** | 🐢 Deep Scan | 🟢 ONLINE |
-| **GloTorrents** | 🌍 Global | **5000ms** | 🐢 Deep Scan | 🟢 ONLINE |
-| **1337x** | 🌍 Global | **5000ms** | 🛡️ Cloudflare | 🟡 WARN |
+Motore	Area	Timeout	Modalità	Stato
+Il Corsaro Nero	🇮🇹 ITA	3s	⚡ Fast Lane	🟢 ONLINE
+Knaben	🌍 Global	3s	⚡ API JSON	🟢 ONLINE
+The Pirate Bay	🌍 Global	3s	⚡ API JSON	🟢 ONLINE
+UIndex	🌍 Global	4s	🔹 Aggregator	🟢 ONLINE
+Nyaa	🇯🇵 Anime	5s	🐢 Deep Scan	🟢 ONLINE
+TorrentGalaxy	🌍 Global	5s	🐢 Deep Scan	🟢 ONLINE
+BitSearch	🌍 Global	5s	🐢 Deep Scan	🟢 ONLINE
+LimeTorrents	🌍 Global	5s	🐢 Deep Scan	🟢 ONLINE
+GloTorrents	🌍 Global	5s	🐢 Deep Scan	🟢 ONLINE
+1337x	🌍 Global	5s	🛡️ Cloudflare Adaptive	🟡 CAUTION
 
 ---
 
