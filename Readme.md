@@ -1,10 +1,29 @@
-███████╗███████╗██╗   ██╗██╗ █████╗ ████████╗██╗  ██╗ █████╗ ███╗   ██╗
-██╔════╝██╔════╝██║   ██║██║██╔══██╗╚══██╔══╝██║  ██║██╔══██╗████╗  ██║
-███████╗█████╗  ██║   ██║██║███████║   ██║   ███████║███████║██╔██╗ ██║
-╚════██║██╔══╝  ██║   ██║██║██╔══██║   ██║   ██╔══██║██╔══██║██║╚██╗██║
-███████║███████╗╚██████╔╝██║██║  ██║   ██║   ██║  ██║██║  ██║██║ ╚████║
-╚══════╝╚══════╝ ╚═════╝ ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝
-                           LEVIATHAN — RD EDITION
+<div align="center">
+
+  <img src="https://api.iconify.design/fa6-solid:dragon.svg?color=%2300f2ea&width=160" alt="Leviathan Logo" />
+
+  <br>
+  <a href="https://github.com/tuo-user/leviathan-core">
+    <img src="https://readme-typing-svg.herokuapp.com?font=Rajdhani&weight=700&size=60&duration=3000&pause=1000&color=00F2EA&center=true&vCenter=true&width=800&height=100&lines=LEVIATHAN;IL+METAMOTORE+ITALIANO;REAL-DEBRID+%7C+ALLDEBRID+%7C+TORBOX;SYSTEM+READY." alt="Typing SVG" />
+  </a>
+
+  <p>
+    <img src="https://img.shields.io/badge/Real_Debrid-Supported-A2B9F0?style=for-the-badge&logo=realdebrid&logoColor=black" />
+    <img src="https://img.shields.io/badge/AllDebrid-Supported-F5A623?style=for-the-badge&logo=alldebrid&logoColor=white" />
+    <img src="https://img.shields.io/badge/TorBox-Supported-6E45E2?style=for-the-badge&logo=torbox&logoColor=white" />
+  </p>
+
+  <p>
+    <img src="https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" />
+    <img src="https://img.shields.io/badge/Architecture-Multi_Provider-blueviolet?style=for-the-badge" />
+    <img src="https://img.shields.io/badge/Status-OPERATIONAL-success?style=for-the-badge" />
+  </p>
+
+  <p>
+    <code>Adaptive Timeout</code> ⚡ <code>Italian-First Engine</code> ⚡ <code>Anti-Bot Intelligence</code> ⚡ <code>Magnet Boosting</code>
+  </p>
+
+</div>
 
 ---
 
