@@ -1,18 +1,15 @@
 <div align="center">
-
-# 🐉 LEVIATHAN CORE
-
-<img src="https://img.shields.io/badge/Project-Leviathan-darkred?style=for-the-badge&logo=dragon&logoColor=white" />
-<img src="https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" />
-<img src="https://img.shields.io/badge/Status-ACTIVE-success?style=for-the-badge" />
-<img src="https://img.shields.io/badge/Engine-V2.0-blueviolet?style=for-the-badge" />
-
-<h3>🇮🇹 Il Metamotore Torrent Italiano più potente mai creato.</h3>
-
-<b>Adaptive Timeout • Italian-First Engine • Anti-Bot Intelligence • Magnet Boosting</b>
-
+  <img src="https://icongr.am/fontawesome/dragon.svg?size=128&color=00f2ea" height="130" width="130" alt="Leviathan Logo" />
+  <h1>LEVIATHAN CORE</h1>
+  <img src="https://img.shields.io/badge/Project-Leviathan-darkred?style=for-the-badge&logo=dragon&logoColor=white" />
+  <img src="https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" />
+  <img src="https://img.shields.io/badge/Status-ACTIVE-success?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Engine-V2.0-blueviolet?style=for-the-badge" />
+  
+  <h3>🇮🇹 Il Metamotore Torrent Italiano più potente mai creato.</h3>
+  
+  <b>Adaptive Timeout • Italian-First Engine • Anti-Bot Intelligence • Magnet Boosting</b>
 </div>
-
 ---
 
 ## ⚡ Cos’è Leviathan?
