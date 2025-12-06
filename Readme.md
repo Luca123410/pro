@@ -78,4 +78,32 @@ Assicurati di avere le dipendenze core:
 
 ```bash
 npm install axios cheerio cloudscraper
+```
+
+---
+
+## ⚖️ Legal Disclaimer & Liability Warning
+
+> [!WARNING]
+> **LEGGERE ATTENTAMENTE PRIMA DELL'USO**
+>
+> **1. Natura del Software**
+> **Leviathan** è un motore di ricerca e *web scraper* automatizzato. Funziona esclusivamente come aggregatore di metadati già disponibili pubblicamente sul World Wide Web.
+> * **Nessun File Ospitato:** Leviathan **NON** ospita, carica o gestisce alcun file video, torrent o contenuto protetto sui propri server.
+> * **Solo Indicizzazione:** Il software si limita a processare testo HTML e restituire Magnet Link (hash) trovati su siti di terze parti, agendo come un comune browser o motore di ricerca (es. Google).
+>
+> **2. Scopo Educativo**
+> Questo progetto è stato sviluppato esclusivamente per fini di **ricerca, studio dell'architettura web, parsing HTML e test di automazione**. Il codice sorgente è fornito "così com'è" per dimostrare capacità tecniche.
+>
+> **3. Responsabilità dell'Utente**
+> L'autore del repository e i contributori non hanno alcun controllo su come l'utente finale utilizzerà questo software.
+> * L'utente si assume la **piena ed esclusiva responsabilità** legale per l'utilizzo di Leviathan.
+> * È responsabilità dell'utente verificare la conformità con le leggi locali sul copyright e sulla proprietà intellettuale (es. DMCA, EU Copyright Directive).
+>
+> **4. Divieto di Pirateria**
+> **Scaricare e condividere opere protette da diritto d'autore senza autorizzazione è un reato.** L'autore condanna fermamente la pirateria informatica e non incoraggia, supporta o facilita in alcun modo la violazione del copyright.
+>
+> **Se non accetti queste condizioni, disinstalla e cancella immediatamente questo software.**
+
+---
 
