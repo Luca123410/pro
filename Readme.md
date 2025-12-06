@@ -51,7 +51,7 @@
 
 </div>
 
----
+
 ## ⚡ Cos’è Leviathan?
 
 > **Leviathan non è un semplice scraper.** È un motore predittivo, aggressivo e intelligente, costruito per navigare nel caos dei torrent e restituire risultati italiani affidabili e ultra-puliti.
