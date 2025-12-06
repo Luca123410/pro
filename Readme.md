@@ -72,12 +72,33 @@ Leviathan bilancia il carico su questi nodi:
 
 ---
 
-## 📦 Installazione
+📦 Deployment Protocol
+<div align="center"> <img src="https://img.shields.io/badge/Docker-Container-2496ED?style=for-the-badge&logo=docker&logoColor=white" /> <img src="https://img.shields.io/badge/Git-Clone-F05032?style=for-the-badge&logo=git&logoColor=white" /> <img src="https://img.shields.io/badge/System-Ready-success?style=for-the-badge" /> </div>
 
-Assicurati di avere le dipendenze core:
+Leviathan è progettato per operare in container isolati. Segui la procedura di inizializzazione per avviare il nucleo.
+
+1. 📡 Inizializzazione Repository
+Clona il codice sorgente nel tuo ambiente locale.
 
 ```bash
-npm install axios cheerio cloudscraper
+git clone https://github.com/tuo-user/leviathan-core.git
+cd leviathan-core
+
+```
+2. 🐳 Container Ignition
+Compila l'immagine e avvia il demone in background tramite Docker Compose.
+
+```bash
+docker-compose up -d --build
+```
+3. 🖥️ System Status
+Verifica che il Leviathan sia emerso correttamente monitorando i log in tempo reale.
+
+```bash
+docker logs -f leviathan-core
+```
+Nota: Il servizio sarà accessibile all'indirizzo http://localhost:7000 (o alla porta configurata nel docker-compose.yml).
+
 ```
 
 ---
