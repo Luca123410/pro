@@ -1,11 +1,12 @@
+<p align="center">
+  <img src="https://svg-banners.vercel.app/api?type=glitch&text1=LEVIATHAN%20RD&width=1000&height=200" />
+</p>
+
 <div align="center">
 
-  <img src="https://api.iconify.design/fa6-solid:dragon.svg?color=%2300f2ea&width=160" alt="Leviathan Logo" />
+  <img src="https://api.iconify.design/fa6-solid:dragon.svg?color=%2300f2ea&width=150" alt="Logo" />
 
-  <br>
-  <a href="https://github.com/tuo-user/leviathan-core">
-    <img src="https://readme-typing-svg.herokuapp.com?font=Rajdhani&weight=700&size=60&duration=3000&pause=1000&color=00F2EA&center=true&vCenter=true&width=800&height=100&lines=LEVIATHAN;IL+METAMOTORE+ITALIANO;REAL-DEBRID+%7C+ALLDEBRID+%7C+TORBOX;SYSTEM+READY." alt="Typing SVG" />
-  </a>
+  <h1>LEVIATHAN</h1>
 
   <p>
     <img src="https://img.shields.io/badge/Real_Debrid-Supported-A2B9F0?style=for-the-badge&logo=realdebrid&logoColor=black" />
@@ -19,11 +20,17 @@
     <img src="https://img.shields.io/badge/Status-OPERATIONAL-success?style=for-the-badge" />
   </p>
 
+  <h3>🇮🇹 Il metamotore torrent italiano più potente mai creato.</h3>
+
   <p>
-    <code>Adaptive Timeout</code> ⚡ <code>Italian-First Engine</code> ⚡ <code>Anti-Bot Intelligence</code> ⚡ <code>Magnet Boosting</code>
+    <code>Adaptive Timeout</code> ⚡ 
+    <code>Italian-First Engine</code> ⚡ 
+    <code>Anti-Bot Intelligence</code> ⚡ 
+    <code>Magnet Boosting</code>
   </p>
 
 </div>
+
 
 ---
 
