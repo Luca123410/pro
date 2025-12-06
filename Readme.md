@@ -1,6 +1,7 @@
 <p align="center">
-  <img src="https://svg-banners.vercel.app/api?type=glitch&text1=LEVIATHAN%20RD&width=1000&height=200" />
+  <img src="https://svg-banners.vercel.app/api?type=glitch&text1=LEVIATHAN%20RD&width=960&height=220" />
 </p>
+
 
 <div align="center">
 
