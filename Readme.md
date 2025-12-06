@@ -65,7 +65,7 @@ Il core, sviluppato in **Node.js**, orchestra scansioni parallele sui principali
 
 ---
 
-## 👽 Core Capabilities
+## 🐉 Core Capabilities
 
 > Il sistema si distingue per un approccio algoritmico proprietario che privilegia la **precisione semantica** sulla forza bruta.
 
