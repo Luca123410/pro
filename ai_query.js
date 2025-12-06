@@ -1,10 +1,5 @@
-/**
- * ai_query.js
- * Il "Cervello Semantico" di Leviathan
- * Espande le query usando alias noti e logica fuzzy.
- */
 
-// Dizionario AI statico (espandibile via API in futuro)
+// Dizionario AI statico
 const SEMANTIC_ALIASES = {
     // Serie Popolari
     "la casa di carta": ["money heist", "la casa de papel"],
@@ -17,8 +12,10 @@ const SEMANTIC_ALIASES = {
     // Film / Franchise complessi
     "fast and furious": ["fast & furious", "f9", "fast x"],
     "harry potter": ["hp"],
-    // Correzioni comuni
-    "dr house": ["house md", "house m.d.", "dr. house"]
+    // Correzioni comuni & Prequel
+    "dr house": ["house md", "house m.d.", "dr. house"],
+    "it welcome to derry": ["welcome to derry"], // FIX FONDAMENTALE
+    "it: welcome to derry": ["welcome to derry"]
 };
 
 function generateSmartQueries(meta) {
@@ -31,9 +28,12 @@ function generateSmartQueries(meta) {
     if (originalTitle) titles.add(originalTitle);
 
     // 2. Espansione Semantica (AI Dictionary)
-    if (SEMANTIC_ALIASES[cleanTitle]) {
-        SEMANTIC_ALIASES[cleanTitle].forEach(alias => titles.add(alias));
-    }
+    // Cerca sia il titolo pulito che l'originale nel dizionario
+    [cleanTitle, (originalTitle || "").toLowerCase().trim()].forEach(t => {
+        if (SEMANTIC_ALIASES[t]) {
+            SEMANTIC_ALIASES[t].forEach(alias => titles.add(alias));
+        }
+    });
 
     // 3. Generazione Query Combinate
     let queries = new Set();
@@ -51,7 +51,7 @@ function generateSmartQueries(meta) {
             // Formato XxY (vecchi tracker)
             queries.add(`${t} ${season}x${eStr}`);
             
-            // Pack Stagionali (Fallback intelligente)
+            // Pack Stagionali
             queries.add(`${t} Stagione ${season}`);
             queries.add(`${t} Season ${season}`);
         } else {
@@ -61,9 +61,7 @@ function generateSmartQueries(meta) {
         }
     });
 
-    // Converte in array e prioritizza il titolo esatto originale
     return Array.from(queries).sort((a, b) => {
-        // Mette in cima le query che iniziano con il titolo originale
         if (originalTitle && a.startsWith(originalTitle)) return -1;
         return 0;
     });
