@@ -1,67 +1,31 @@
-<div align="center">
+<div align="center"> <img src="https://api.iconify.design/game-icons:sea-dragon.svg?color=%2300eaff&width=200" alt="Leviathan Logo" /> <h1 style="font-size: 4.5rem; font-weight: 900; margin: 0; letter-spacing: -4px; text-transform: uppercase;"> L E V I A T H A N </h1> <div style="font-size: 1.25rem; margin-top: -5px; opacity: 0.85;"> <em>Italian Torrent Intelligence Engine</em> </div> <br> <p> <img src="https://img.shields.io/badge/Real_Debrid-Enhanced_Access-19C2F2?style=for-the-badge&logo=realdebrid&logoColor=000" /> <img src="https://img.shields.io/badge/AllDebrid-Full_Integration-F5A623?style=for-the-badge&logo=alldebrid&logoColor=fff" /> <img src="https://img.shields.io/badge/TorBox-Core_Support-7A4EE3?style=for-the-badge" /> </p> <p> <img src="https://img.shields.io/badge/Node.js-18%2B-3C873A?style=for-the-badge&logo=node.js&logoColor=fff" /> <img src="https://img.shields.io/badge/Engine-HyperMode_3.5-8A2BE2?style=for-the-badge" /> <img src="https://img.shields.io/badge/Status-ONLINE-success?style=for-the-badge" /> </p> <br> <div style="background:#0a0f14; border:1px solid #00eaff33; padding:20px 28px; border-radius:12px; width:80%; max-width:780px; color:#d3faff;"> <strong style="font-size:1.45rem; color:#00eaff;">🇮🇹 L’Engine di Ricerca Torrent Progettato per l’Ecosistema Italiano</strong> <br><br> Leviathan combina un motore multicrawler avanzato, tecniche di fingerprint evasive e un sistema di filtraggio semantico ottimizzato per contenuti italiani. Architettura scalabile, latenza minima e risultati accurati in ogni condizione di rete. Perfetto per integrazione in servizi, app e piattaforme autonome. </div> <br> <p style="font-size: 1.15rem; max-width: 700px;"> <code>Adaptive Payload Routing</code> ⚡ <code>Query Morphing Engine</code> ⚡ <code>Stealth Header Rotation</code> ⚡ <code>Magnet Fusion Core</code> </p> <br> <hr style="border:0;height:1px;width:75%;background:linear-gradient(to right,transparent,#00eaff,transparent);margin:35px auto;" /> </div>
+⚡ Cos’è Leviathan?
 
-  <img src="https://api.iconify.design/game-icons:sea-dragon.svg?color=%2300eaff&width=200" alt="Leviathan Logo" />
+Leviathan è un torrent intelligence engine, progettato per fornire risultati affidabili, contestuali e ottimizzati per il mercato italiano.
 
-  <h1 style="font-size: 4.5rem; font-weight: 900; margin: 0; letter-spacing: -4px; text-transform: uppercase;">
-    L E V I A T H A N
-  </h1>
+Basato su Node.js, sfrutta un'architettura multi-provider con scoring dinamico che:
 
-  <div style="font-size: 1.25rem; margin-top: -5px; opacity: 0.85;">
-    <em>Deep-Web Torrent Metacrawler • Italian Cyber Engine</em>
-  </div>
+valuta la qualità degli index in tempo reale
 
-  <br>
+applica timeout progressivi
 
-  <p>
-    <img src="https://img.shields.io/badge/Real_Debrid-ENHANCED_Access-19C2F2?style=for-the-badge&logo=realdebrid&logoColor=000" />
-    <img src="https://img.shields.io/badge/AllDebrid-Integrated-F5A623?style=for-the-badge&logo=alldebrid&logoColor=fff" />
-    <img src="https://img.shields.io/badge/TorBox-Core_Support-7A4EE3?style=for-the-badge" />
-  </p>
+aggira meccanismi anti-bot e rate-limit
 
-  <p>
-    <img src="https://img.shields.io/badge/Node.js-18%2B-3C873A?style=for-the-badge&logo=node.js&logoColor=fff" />
-    <img src="https://img.shields.io/badge/Engine_HyperMode-v3.5-8A2BE2?style=for-the-badge" />
-    <img src="https://img.shields.io/badge/Status-ONLINE-success?style=for-the-badge" />
-  </p>
+ripulisce automaticamente i risultati non pertinenti
 
-  <br>
+privilegia fonti ad alta velocità e basso rumore semantico
 
-  <div style="background:#0a0f14; border:1px solid #00eaff33; padding:20px 28px; border-radius:12px; width:80%; max-width:780px; color:#d3faff;">
-    <strong style="font-size:1.45rem; color:#00eaff;">🇮🇹 Il Nuovo Standard dei Metamotori Torrent</strong>
-    <br><br>
-    Progettato con un approccio <em>Italy-First</em>, Leviathan integra un sistema avanzato di mitigazione anti-bot, un motore multi-provider ad alte prestazioni e un framework di scraping stealth di nuova generazione.  
-    Risultati accurati, affidabili e ottimizzati per la massima efficienza nella ricerca di contenuti italiani.
-  </div>
+🔥 Novità della Release LEVIATHAN
 
-  <br>
+🚀 Core Engine 3.5: Riscrittura del motore con stabilità superiore e pipeline parallela ottimizzata.
 
-  <p style="font-size: 1.15rem; max-width: 700px;">
-    <code>AI Timeout Scaling</code> ⚡ 
-    <code>Smart Query Morphing</code> ⚡ 
-    <code>Ultra Stealth Headers</code> ⚡ 
-    <code>Magnet Fusion Engine</code>
-  </p>
+🏎️ Fast Lane Mode: Sistema intelligente di priorità basato su latenza e affidabilità del provider.
 
-  <br>
+🇮🇹 ITA Semantic Filter: Nuovo modello di filtraggio linguistico per eliminare falsi positivi.
 
-  <hr style="border:0;height:1px;width:75%;background:linear-gradient(to right,transparent,#00eaff,transparent);margin:35px auto;" />
+🛡️ Cloudflare Bypass v2: Ottimizzazione di chiamate cloudscraper e fallback automatici.
 
-</div>
-
-
-
-## ⚡ Cos’è Leviathan?
-
-> **Leviathan non è un semplice scraper.** È un motore predittivo, aggressivo e intelligente, costruito per navigare nel caos dei torrent e restituire risultati italiani affidabili e ultra-puliti.
-
-Scritto in Node.js, **Leviathan** aggrega i migliori index mondiali, filtrando i risultati in tempo reale con una logica proprietaria che distingue le fonti veloci da quelle lente, applicando timeout dinamici e bypassando le protezioni anti-bot.
-
-### 🔥 Novità nella Release LEVIATHAN
-* 🚀 **Core Engine:** Riscritto e consolidato per massima stabilità.
-* 🏎️ **Fast Lane Mode:** Timeout adattivi per API ultra-rapide.
-* 🇮🇹 **Zero False Positives:** Filtro ITA migliorato con regex chirurgiche.
-* 🛡️ **Cloudflare Bypass:** Ottimizzazione delle chiamate `cloudscraper`.
-* 💉 **Magnet Injection:** Nuova lista di tracker UDP Tier-1.
+💉 Magnet Injection 2.0: Integration tier di tracker UDP affidabili e ad alta resa.
 
 ---
 
