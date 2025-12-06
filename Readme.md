@@ -1,11 +1,45 @@
-<!-- 🔥 LEVIATHAN – GLITCH SERPENT BANNER -->
-<p align="center">
-  <svg width="100%" height="140" viewBox="0 0 800 200">
-    <defs>
-      <linearGradient id="neon" x1="0%" y1="0%" x2="100%" y2="0%">
-        <stop offset="0%"   stop-color="#00f2ea"/>
-        <stop offset="100%" stop-color="#008a92"/>
-      </linearGradient>
+<div align="center">
+
+  <img src="https://api.iconify.design/fa6-solid:dragon.svg?color=%2300f2ea&width=160" 
+       alt="Leviathan Logo"
+       style="filter: drop-shadow(0 0 10px #00eaff);" />
+
+  <h1 style="
+    font-size: 4rem;
+    letter-spacing: -2px;
+    margin-top: 0;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    background: linear-gradient(90deg,#00f2ea,#008a92);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  ">
+    LEVIATHAN
+  </h1>
+
+  <p>
+    <img src="https://img.shields.io/badge/Real_Debrid-Supported-A2B9F0?style=for-the-badge&logo=realdebrid&logoColor=black" />
+    <img src="https://img.shields.io/badge/AllDebrid-Supported-F5A623?style=for-the-badge&logo=alldebrid&logoColor=white" />
+    <img src="https://img.shields.io/badge/TorBox-Supported-6E45E2?style=for-the-badge&logo=torbox&logoColor=white" />
+  </p>
+
+  <p>
+    <img src="https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" />
+    <img src="https://img.shields.io/badge/Architecture-Multi_Provider-blueviolet?style=for-the-badge" />
+    <img src="https://img.shields.io/badge/Status-OPERATIONAL-success?style=for-the-badge" />
+  </p>
+
+  <h3>🇮🇹 Il Metamotore Torrent Italiano più potente mai creato.</h3>
+
+  <p>
+    <code>Adaptive Timeout</code> ⚡
+    <code>Italian-First Engine</code> ⚡
+    <code>Anti-Bot Intelligence</code> ⚡
+    <code>Magnet Boosting</code>
+  </p>
+
+</div>
+
 
  
 
