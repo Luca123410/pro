@@ -1,7 +1,8 @@
 <div align="center">
-  <img src="https://capsule-render.vercel.app/api?type=waving&height=250&color=0:050a14,100:00384d&text=LEVIATHAN%20|%20RD&fontColor=00f2ea&fontSize=70&fontAlign=50&fontAlignY=40&animation=fadeIn&desc=DEEP%20SEA%20STREAMING%20CORE&descSize=20&descAlignY=60&descAlign=50&fontAlign=50" alt="Leviathan Header" />
+  <a href="https://github.com/tuo-user/leviathan-core">
+    <img src="https://readme-typing-svg.herokuapp.com?font=Rajdhani&weight=800&size=80&duration=4000&pause=1000&color=00F2EA&center=true&vCenter=true&width=800&height=120&lines=LEVIATHAN+%7C+RD" alt="Typing SVG" />
+  </a>
 </div>
-
 
 <div align="center">
 
