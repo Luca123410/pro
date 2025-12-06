@@ -94,21 +94,29 @@ Non si limita a trovare il link. Lo potenzia.
 
 ---
 
-## 🌐 Leviathan Network (Motori Supportati)
+<div align="center">
 
-eviathan distribuisce le query su nodi ottimizzati per prestazioni, affidabilità e stealth:
+## 🌐 LEVIATHAN NETWORK NODES
 
-Motore	Area	Timeout	Modalità	Stato
-Il Corsaro Nero	🇮🇹 ITA	3s	⚡ Fast Lane	🟢 ONLINE
-Knaben	🌍 Global	3s	⚡ API JSON	🟢 ONLINE
-The Pirate Bay	🌍 Global	3s	⚡ API JSON	🟢 ONLINE
-UIndex	🌍 Global	4s	🔹 Aggregator	🟢 ONLINE
-Nyaa	🇯🇵 Anime	5s	🐢 Deep Scan	🟢 ONLINE
-TorrentGalaxy	🌍 Global	5s	🐢 Deep Scan	🟢 ONLINE
-BitSearch	🌍 Global	5s	🐢 Deep Scan	🟢 ONLINE
-LimeTorrents	🌍 Global	5s	🐢 Deep Scan	🟢 ONLINE
-GloTorrents	🌍 Global	5s	🐢 Deep Scan	🟢 ONLINE
-1337x	🌍 Global	5s	🛡️ Cloudflare Adaptive	🟡 CAUTION
+<br>
+
+| **TARGET ENGINE** | **REGION** | **LATENCY** | **MODE** | **STATUS** |
+| :--- | :---: | :---: | :---: | :---: |
+| **Il Corsaro Nero** | 🇮🇹 ITA | ![](https://img.shields.io/badge/⏱️_3000ms-HQ-00eaff?style=flat-square&labelColor=black) | ![](https://img.shields.io/badge/⚡_Fast-Lane-00eaff?style=flat-square&labelColor=black) | 🟢 |
+| **Knaben** | 🌍 GLB | ![](https://img.shields.io/badge/⏱️_3000ms-HQ-00eaff?style=flat-square&labelColor=black) | ![](https://img.shields.io/badge/🔌_API-JSON-blueviolet?style=flat-square&labelColor=black) | 🟢 |
+| **The Pirate Bay** | 🌍 GLB | ![](https://img.shields.io/badge/⏱️_3000ms-HQ-00eaff?style=flat-square&labelColor=black) | ![](https://img.shields.io/badge/🔌_API-JSON-blueviolet?style=flat-square&labelColor=black) | 🟢 |
+| **UIndex** | 🌍 GLB | ![](https://img.shields.io/badge/⏱️_4000ms-MED-yellow?style=flat-square&labelColor=black) | ![](https://img.shields.io/badge/🔹_Aggregator-Hybrid-blue?style=flat-square&labelColor=black) | 🟢 |
+| **Nyaa** | 🇯🇵 JPN | ![](https://img.shields.io/badge/⏱️_5000ms-DEEP-orange?style=flat-square&labelColor=black) | ![](https://img.shields.io/badge/🐢_Deep-Scan-lightgrey?style=flat-square&labelColor=black) | 🟢 |
+| **TorrentGalaxy** | 🌍 GLB | ![](https://img.shields.io/badge/⏱️_5000ms-DEEP-orange?style=flat-square&labelColor=black) | ![](https://img.shields.io/badge/🐢_Deep-Scan-lightgrey?style=flat-square&labelColor=black) | 🟢 |
+| **BitSearch** | 🌍 GLB | ![](https://img.shields.io/badge/⏱️_5000ms-DEEP-orange?style=flat-square&labelColor=black) | ![](https://img.shields.io/badge/🐢_Deep-Scan-lightgrey?style=flat-square&labelColor=black) | 🟢 |
+| **LimeTorrents** | 🌍 GLB | ![](https://img.shields.io/badge/⏱️_5000ms-DEEP-orange?style=flat-square&labelColor=black) | ![](https://img.shields.io/badge/🐢_Deep-Scan-lightgrey?style=flat-square&labelColor=black) | 🟢 |
+| **GloTorrents** | 🌍 GLB | ![](https://img.shields.io/badge/⏱️_5000ms-DEEP-orange?style=flat-square&labelColor=black) | ![](https://img.shields.io/badge/🐢_Deep-Scan-lightgrey?style=flat-square&labelColor=black) | 🟢 |
+| **1337x** | 🌍 GLB | ![](https://img.shields.io/badge/⏱️_5000ms-DEEP-orange?style=flat-square&labelColor=black) | ![](https://img.shields.io/badge/🛡️_Cloudflare-Protected-f38020?style=flat-square&labelColor=black) | 🟡 |
+
+<br>
+</div>
+
+
 
 ---
 
