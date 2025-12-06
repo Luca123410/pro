@@ -1,12 +1,12 @@
 <div align="center">
 
-  <img src="https://api.iconify.design/game-icons:sea-dragon.svg?color=%2300eaff&width=200" style="filter: drop-shadow(0 0 10px rgba(0, 234, 255, 0.4)); margin-bottom: 15px;" />
+  <img src="https://api.iconify.design/game-icons:sea-dragon.svg?color=%2300eaff&width=220" style="filter: drop-shadow(0 0 15px rgba(0, 234, 255, 0.4)); margin-bottom: 20px;" />
 
-  <h1 style="font-size: 5rem; font-weight: 800; margin: 0; line-height: 1; letter-spacing: -2px; color: #fff;">
+  <h1 style="font-size: 5rem; font-weight: 900; margin: 0; line-height: 1; letter-spacing: -3px; color: #fff; text-transform: uppercase;">
     LEVIATHAN
   </h1>
 
-  <div style="font-size: 1.1rem; color: #94a3b8; margin-top: 10px; font-weight: 400; letter-spacing: 1px;">
+  <div style="font-size: 1.1rem; color: #94a3b8; margin-top: 10px; font-weight: 400; letter-spacing: 2px;">
     ADVANCED TORRENT AGGREGATION PROTOCOL
   </div>
 
@@ -26,12 +26,12 @@
 
   <br>
 
-  <div style="background: #050a10; border: 1px solid rgba(0, 234, 255, 0.15); border-radius: 8px; padding: 25px; width: 85%; max-width: 800px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
-    <strong style="font-size: 1.3rem; color: #00eaff; display: block; margin-bottom: 10px;">
+  <div style="background: #050a10; border: 1px solid rgba(0, 234, 255, 0.15); border-radius: 12px; padding: 25px; width: 85%; max-width: 800px; box-shadow: 0 10px 40px rgba(0,0,0,0.6);">
+    <strong style="font-size: 1.3rem; color: #00eaff; display: block; margin-bottom: 12px; letter-spacing: 0.5px;">
       🇮🇹 Engineered for Italian Content Precision
     </strong>
-    <span style="color: #cbd5e1; line-height: 1.6; font-size: 1rem;">
-      Leviathan ridefinisce lo standard dei metamotori torrent attraverso un'architettura <b>Italy-First</b>.
+    <span style="color: #cbd5e1; line-height: 1.6; font-size: 1.05rem;">
+      <b>Leviathan</b> ridefinisce lo standard dei metamotori torrent attraverso un'architettura <em>Italy-First</em>.
       Integra un sistema di validazione semantica dei titoli, gestione automatizzata delle challenge WAF e un algoritmo di routing a bassa latenza per garantire risultati pertinenti e immediati.
     </span>
   </div>
@@ -65,7 +65,7 @@ Il core, sviluppato in **Node.js**, orchestra scansioni parallele sui principali
 
 ---
 
-## 🐉 Core Capabilities
+## 🔱 Core Capabilities
 
 > Il sistema si distingue per un approccio algoritmico proprietario che privilegia la **precisione semantica** sulla forza bruta.
 
@@ -94,9 +94,9 @@ Non si limita a trovare il link. Lo potenzia.
 
 ---
 
-## 🌐 Leviathan Network (Motori Supportati)
+## 🌐 Leviathan Network
 
-Leviathan bilancia il carico su questi nodi:
+Il bilanciamento del carico è distribuito sui seguenti nodi:
 
 | Motore | Area | Timeout | Modalità | Stato |
 | :--- | :---: | :---: | :---: | :---: |
@@ -113,57 +113,17 @@ Leviathan bilancia il carico su questi nodi:
 
 ---
 
-# 📦 Installazione
+## 📦 Deployment Protocol
 
-🔥 Metodo 1 — Clone & Docker Compose (Full Auto-Deploy)
+**Metodo 1 — Clone & Docker Compose (Full Auto-Deploy)**
 
-Il modo più semplice, pulito e professionale per avviare Leviathan Core.
+Il modo d'élite per avviare Leviathan Core. Pulito, isolato e immediato.
+
+**1. Inizializzazione Repository**
 
 ```bash
+# 📂 Clona il repository ufficiale
+git clone [https://github.com/tuutente/Leviathan-Core.git](https://github.com/tuutente/Leviathan-Core.git)
 
-📂  Clona il repository:
-git clone https://github.com/tuutente/Leviathan-Core.git
-
-➡️  Entra nella cartella:
+# 📂 Entra nel nucleo del sistema
 cd Leviathan-Core
-
-```
-# 🐳 Avvia Leviathan tramite Docker Compose
-
-```bash
-docker compose up -d --build
-
-```
-
-> ✔️ Avvio completamente automatizzato
-✔️ Nessuna configurazione manuale
-✔️ Perfetto per server, VPS, NAS, ambienti isolati
-
-
----
-
-## ⚖️ Legal Disclaimer & Liability Warning
-
-> [!WARNING]
-> **LEGGERE ATTENTAMENTE PRIMA DELL'USO**
->
-> **1. Natura del Software**
-> **Leviathan** è un motore di ricerca e *web scraper* automatizzato. Funziona esclusivamente come aggregatore di metadati già disponibili pubblicamente sul World Wide Web.
-> * **Nessun File Ospitato:** Leviathan **NON** ospita, carica o gestisce alcun file video, torrent o contenuto protetto sui propri server.
-> * **Solo Indicizzazione:** Il software si limita a processare testo HTML e restituire Magnet Link (hash) trovati su siti di terze parti, agendo come un comune browser o motore di ricerca (es. Google).
->
-> **2. Scopo Educativo**
-> Questo progetto è stato sviluppato esclusivamente per fini di **ricerca, studio dell'architettura web, parsing HTML e test di automazione**. Il codice sorgente è fornito "così com'è" per dimostrare capacità tecniche.
->
-> **3. Responsabilità dell'Utente**
-> L'autore del repository e i contributori non hanno alcun controllo su come l'utente finale utilizzerà questo software.
-> * L'utente si assume la **piena ed esclusiva responsabilità** legale per l'utilizzo di Leviathan.
-> * È responsabilità dell'utente verificare la conformità con le leggi locali sul copyright e sulla proprietà intellettuale (es. DMCA, EU Copyright Directive).
->
-> **4. Divieto di Pirateria**
-> **Scaricare e condividere opere protette da diritto d'autore senza autorizzazione è un reato.** L'autore condanna fermamente la pirateria informatica e non incoraggia, supporta o facilita in alcun modo la violazione del copyright.
->
-> **Se non accetti queste condizioni, disinstalla e cancella immediatamente questo software.**
-
----
-
