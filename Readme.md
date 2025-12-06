@@ -72,7 +72,7 @@ Leviathan bilancia il carico su questi nodi:
 
 ---
 
-📦 Installazione
+# 📦 Installazione
 
 🔥 Metodo 1 — Clone & Docker Compose (Full Auto-Deploy)
 
