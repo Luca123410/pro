@@ -1,93 +1,57 @@
-<div align="center" style="font-family: 'Segoe UI', sans-serif;">
+<div align="center">
 
-  <!-- Logo -->
-  <img src="https://api.iconify.design/game-icons:sea-dragon.svg?color=%2300eaff&width=220" alt="Leviathan Logo" style="filter: drop-shadow(0 0 14px #00eaff); animation: glowPulse 2.5s infinite alternate;" />
+  <img src="https://api.iconify.design/game-icons:sea-dragon.svg?color=%2300eaff&width=220" style="filter: drop-shadow(0 0 10px rgba(0, 234, 255, 0.4)); margin-bottom: 20px;" />
 
-  <!-- Title -->
-  <h1 style="font-size: 4.8rem; font-weight: 900; margin: 10px 0 0; letter-spacing: -4px; text-transform: uppercase; color: #00eaff; text-shadow: 0 0 8px #00eaff, 0 0 16px #19f2ff; animation: glowPulse 3s infinite alternate;">
-    L E V I A T H A N
+  <h1 style="font-size: 5rem; line-height: 1; margin: 0; font-weight: 900; letter-spacing: -2px; color: #fff; text-transform: uppercase;">
+    LEVIATHAN
   </h1>
 
-  <div style="font-size: 1.25rem; margin-top: -5px; opacity: 0.85; font-style: italic;">
-    Deep-Web Torrent Metacrawler • Italian Cyber Engine
-  </div>
+  <a href="https://github.com/tuo-user/leviathan-core">
+    <img src="https://readme-typing-svg.herokuapp.com?font=Fira+Code&weight=600&size=22&duration=3500&pause=1000&color=00EAFF&center=true&vCenter=true&width=600&height=50&lines=IL+METAMOTORE+ITALIANO+DEFINITIVO;REAL-DEBRID+%7C+ALLDEBRID+%7C+TORBOX;ZERO+COMPROMESSI.+SOLO+QUALIT%C3%80." alt="Typing SVG" />
+  </a>
 
-  <br>
-
-  <!-- Badges -->
-  <p>
-    <img src="https://img.shields.io/badge/Real_Debrid-ENHANCED_Access-19C2F2?style=for-the-badge&logo=realdebrid&logoColor=000" alt="RealDebrid Badge" />
-    <img src="https://img.shields.io/badge/AllDebrid-Integrated-F5A623?style=for-the-badge&logo=alldebrid&logoColor=fff" alt="AllDebrid Badge" />
-    <img src="https://img.shields.io/badge/TorBox-Core_Support-7A4EE3?style=for-the-badge" alt="TorBox Badge" />
+  <p style="margin-top: 10px;">
+    <img src="https://img.shields.io/badge/Real_Debrid-ACCESSO_PRIORITARIO-A2B9F0?style=for-the-badge&logo=realdebrid&logoColor=black" />
+    <img src="https://img.shields.io/badge/AllDebrid-MODULO_ATTIVO-F5A623?style=for-the-badge&logo=alldebrid&logoColor=white" />
+    <img src="https://img.shields.io/badge/TorBox-CORE_SUPPORT-7A4EE3?style=for-the-badge&logo=torbox&logoColor=white" />
   </p>
 
   <p>
-    <img src="https://img.shields.io/badge/Node.js-18%2B-3C873A?style=for-the-badge&logo=node.js&logoColor=fff" alt="Node.js Badge" />
-    <img src="https://img.shields.io/badge/Engine_HyperMode-v3.5-8A2BE2?style=for-the-badge" alt="Engine Badge" />
-    <img src="https://img.shields.io/badge/Status-ONLINE-success?style=for-the-badge" alt="Status Badge" />
+    <img src="https://img.shields.io/badge/Node.js-v18_LTS-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" />
+    <img src="https://img.shields.io/badge/Engine-HyperMode_v3.5-8A2BE2?style=for-the-badge&logo=dependabot&logoColor=white" />
+    <img src="https://img.shields.io/badge/Status-OPERATIONAL-success?style=for-the-badge&logo=githubactions&logoColor=white" />
   </p>
 
   <br>
 
-  <!-- Main Feature Box -->
-  <div style="background:#0a0f14; border:1px solid #00eaff44; padding:22px 30px; border-radius:16px; width:80%; max-width:780px; color:#d3faff; box-shadow: 0 0 18px #00eaff55; transition: all 0.3s ease; animation: glowPulse 4s infinite alternate;">
-    <strong style="font-size:1.5rem; color:#00eaff; text-shadow: 0 0 6px #00eaff;">
-      🇮🇹 Il Nuovo Standard dei Metamotori Torrent
-    </strong>
-    <br><br>
-    Progettato con un approccio <em>Italy-First</em>, Leviathan integra un sistema avanzato di mitigazione anti-bot, un motore multi-provider ad alte prestazioni e un framework di scraping stealth di nuova generazione.  
-    Risultati accurati, affidabili e ottimizzati per la massima efficienza nella ricerca di contenuti italiani.
+  <div style="background: #050a10; border: 1px solid rgba(0, 234, 255, 0.2); border-radius: 10px; padding: 25px; max-width: 750px; box-shadow: 0 0 30px rgba(0, 234, 255, 0.05);">
+    <h3 style="color: #00eaff; margin-top: 0; text-transform: uppercase; letter-spacing: 1px;">
+      🇮🇹 Semplicemente il Migliore in Italia.
+    </h3>
+    <p style="color: #a0aec0; font-size: 1.05rem; line-height: 1.6;">
+      Mentre gli altri scraper si limitano a copiare, <b>Leviathan</b> valida.
+      Siamo l'unico motore con un <b>algoritmo proprietario di validazione ITA</b> che scarta il 99% dei falsi positivi. Gestione avanzata delle protezioni Cloudflare/WAF, latenza azzerata e integrazione nativa Debrid.
+      <br><br>
+      <span style="color: #fff;">Nessun altro software offre questa precisione sui contenuti italiani.</span>
+    </p>
   </div>
 
   <br>
 
-  <!-- Neon Feature Boxes -->
-  <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:18px; max-width:760px;">
-    <div class="neon-box" style="--neon:#00eaff;">AI Timeout Scaling</div>
-    <div class="neon-box" style="--neon:#19f2ff;">Smart Query Morphing</div>
-    <div class="neon-box" style="--neon:#00d1ff;">Ultra Stealth Headers</div>
-    <div class="neon-box" style="--neon:#00aaff;">Magnet Fusion Engine</div>
-  </div>
+  <p>
+    <img src="https://img.shields.io/badge/⚡_Adaptive-Latency_Protocol-000?style=for-the-badge&labelColor=00eaff" />
+    <img src="https://img.shields.io/badge/🇮🇹_ITA-Strict_Filtering-000?style=for-the-badge&labelColor=00eaff" />
+    <img src="https://img.shields.io/badge/🛡️_Advanced-WAF_Bypass-000?style=for-the-badge&labelColor=00eaff" />
+    <img src="https://img.shields.io/badge/🎯_Zero-False_Positives-000?style=for-the-badge&labelColor=00eaff" />
+  </p>
 
-  <br>
+  <hr style="border: 0; height: 1px; background: linear-gradient(to right, transparent, #00eaff, transparent); margin: 30px auto; width: 80%;">
 
-  <!-- Separator -->
-  <hr style="border:0;height:2px;width:75%;background:linear-gradient(to right,transparent,#00eaff,transparent);margin:35px auto; box-shadow: 0 0 10px #00eaff33;" />
+  <p style="color: #555; font-size: 0.8rem;">
+    ENGINEERED FOR EXCELLENCE
+  </p>
 
 </div>
-
-<!-- Neon Animation CSS -->
-<style>
-  @keyframes glowPulse {
-    0% { filter: drop-shadow(0 0 8px var(--neon, #00eaff)); }
-    50% { filter: drop-shadow(0 0 18px var(--neon, #00eaff)); }
-    100% { filter: drop-shadow(0 0 8px var(--neon, #00eaff)); }
-  }
-
-  .neon-box {
-    background:#00111a; 
-    color: var(--neon); 
-    padding:14px 22px; 
-    border-radius:14px; 
-    font-weight:600; 
-    box-shadow:0 0 12px var(--neon)66; 
-    transition: all 0.3s ease; 
-    cursor:pointer;
-    animation: neonPulse 3s infinite alternate;
-  }
-
-  .neon-box:hover {
-    transform: scale(1.08);
-    box-shadow: 0 0 25px var(--neon), 0 0 40px var(--neon)77;
-  }
-
-  @keyframes neonPulse {
-    0% { box-shadow:0 0 8px var(--neon)55; }
-    50% { box-shadow:0 0 20px var(--neon)77; }
-    100% { box-shadow:0 0 8px var(--neon)55; }
-  }
-</style>
-
 
 
 ## ⚡ Cos’è Leviathan?
