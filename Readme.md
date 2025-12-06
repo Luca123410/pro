@@ -1,7 +1,55 @@
-<div align="center"> <img src="https://api.iconify.design/game-icons:sea-dragon.svg?color=%2300eaff&width=200" /> <h1 style="font-size: 4.5rem; font-weight: 900; margin: 0; letter-spacing: -4px; text-transform: uppercase;"> L E V I A T H A N </h1> <div style="font-size: 1.25rem; margin-top: -5px; opacity: .85;"> <em>Deep-Web Torrent Metacrawler • Italian Cyber Engine</em> </div> <br> <p> <img src="https://img.shields.io/badge/Real_Debrid-ENHANCED_Access-19C2F2?style=for-the-badge&logo=realdebrid&logoColor=000" /> <img src="https://img.shields.io/badge/AllDebrid-Integrated-F5A623?style=for-the-badge&logo=alldebrid&logoColor=fff" /> <img src="https://img.shields.io/badge/TorBox-Core_Support-7A4EE3?style=for-the-badge" /> </p> <p> <img src="https://img.shields.io/badge/Node.js-18%2B-3C873A?style=for-the-badge&logo=node.js&logoColor=fff" /> <img src="https://img.shields.io/badge/Engine_HyperMode-v3.5-8A2BE2?style=for-the-badge" /> <img src="https://img.shields.io/badge/Status-RUNNING-success?style=for-the-badge" /> </p> <br> <div style="background:#0a0f14; border:1px solid #00eaff33; padding:18px 26px; border-radius:12px; width:80%; max-width:780px; color:#d3faff;"> <strong style="font-size:1.4rem; color:#00eaff;">🇮🇹 Il Nuovo Standard dei Metamotori Torrent</strong> <br><br> Ottimizzato per priorità *Italiane*, anti-bot nativo, motore multi-provider con prestazioni estreme, e un livello di scraping stealth che ridefinisce il significato di “ricerca pulita”. </div> <br> <p style="font-size: 1.15rem; max-width: 700px;"> <code>AI Timeout Scaling</code> ⚡ <code>Smart Query Morphing</code> ⚡ <code>Ultra Stealth Headers</code> ⚡ <code>Magnet Fusion Engine</code> </p> <br> <hr style="border:0;height:1px;width:75%;background:linear-gradient(to right,transparent,#00eaff,transparent);margin:35px auto;" /> </div>
+<div align="center">
 
+  <img src="https://api.iconify.design/game-icons:sea-dragon.svg?color=%2300eaff&width=220" style="filter: drop-shadow(0 0 10px rgba(0, 234, 255, 0.4)); margin-bottom: 20px;" />
 
+  <h1 style="font-size: 5rem; line-height: 1; margin: 0; font-weight: 900; letter-spacing: -2px; color: #fff; text-transform: uppercase;">
+    LEVIATHAN
+  </h1>
 
+  <a href="https://github.com/tuo-user/leviathan-core">
+    <img src="https://readme-typing-svg.herokuapp.com?font=Fira+Code&weight=600&size=22&duration=3500&pause=1000&color=00EAFF&center=true&vCenter=true&width=600&height=50&lines=DEEP-WEB+TORRENT+METACRAWLER;REAL-DEBRID+%7C+ALLDEBRID+%7C+TORBOX;ITALIAN+CYBER+ENGINE+ACTIVE." alt="Typing SVG" />
+  </a>
+
+  <p style="margin-top: 10px;">
+    <img src="https://img.shields.io/badge/Real_Debrid-ACCESSO_PRIORITARIO-A2B9F0?style=for-the-badge&logo=realdebrid&logoColor=black" />
+    <img src="https://img.shields.io/badge/AllDebrid-MODULO_ATTIVO-F5A623?style=for-the-badge&logo=alldebrid&logoColor=white" />
+    <img src="https://img.shields.io/badge/TorBox-CORE_SUPPORT-7A4EE3?style=for-the-badge&logo=torbox&logoColor=white" />
+  </p>
+
+  <p>
+    <img src="https://img.shields.io/badge/Node.js-v18_LTS-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" />
+    <img src="https://img.shields.io/badge/Engine-HyperMode_v3.5-8A2BE2?style=for-the-badge&logo=dependabot&logoColor=white" />
+    <img src="https://img.shields.io/badge/Status-OPERATIONAL-success?style=for-the-badge&logo=githubactions&logoColor=white" />
+  </p>
+
+  <br>
+
+  <div style="background: #050a10; border: 1px solid rgba(0, 234, 255, 0.2); border-radius: 10px; padding: 25px; max-width: 750px; box-shadow: 0 0 30px rgba(0, 234, 255, 0.05);">
+    <h3 style="color: #00eaff; margin-top: 0; text-transform: uppercase; letter-spacing: 1px;">
+      🇮🇹 Il Nuovo Standard dei Metamotori
+    </h3>
+    <p style="color: #a0aec0; font-size: 1.05rem; line-height: 1.6;">
+      Progettato per dominare il caos. <b>Leviathan</b> non si limita a cercare: <i>caccia</i>.
+      Ottimizzato per priorità italiane, equipaggiato con anti-bot neurale e un motore di scraping stealth che ridefinisce il concetto di "ricerca pulita".
+    </p>
+  </div>
+
+  <br>
+
+  <p>
+    <img src="https://img.shields.io/badge/⚡_AI-Timeout_Scaling-000?style=for-the-badge&labelColor=00eaff" />
+    <img src="https://img.shields.io/badge/🧬_Smart-Query_Morphing-000?style=for-the-badge&labelColor=00eaff" />
+    <img src="https://img.shields.io/badge/👻_Ultra-Stealth_Headers-000?style=for-the-badge&labelColor=00eaff" />
+    <img src="https://img.shields.io/badge/☢️_Magnet-Fusion_Engine-000?style=for-the-badge&labelColor=00eaff" />
+  </p>
+
+  <br>
+  
+  <img src="https://user-images.githubusercontent.com/74038190/212257468-1e9a91f1-b626-4baa-b15d-5c385dfa7ed2.gif" width="100%">
+
+</div>
+
+---
 ## ⚡ Cos’è Leviathan?
 
 > **Leviathan non è un semplice scraper.** È un motore predittivo, aggressivo e intelligente, costruito per navigare nel caos dei torrent e restituire risultati italiani affidabili e ultra-puliti.
