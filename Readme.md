@@ -1,59 +1,25 @@
 <div align="center">
+  
+  <img src="https://api.iconify.design/fa6-solid:dragon.svg?color=%2300f2ea&width=160" alt="Leviathan Logo" />
 
-  <!-- LOGO GIGANTE NEON -->
-  <img 
-    src="https://api.iconify.design/fa6-solid:dragon.svg?color=%2300f2ea&width=160" 
-    alt="Leviathan Logo"
-    style="margin-bottom: 18px; filter: drop-shadow(0 0 8px #00eaff);"
-  />
-
-  <!-- TITOLONE -->
-  <h1 style="
-      font-size: 3.4rem;
-      margin: 0;
-      font-weight: 900;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      background: linear-gradient(90deg,#00f2ea,#007a89);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-  ">
-    LEVIATHAN | RD
+  <h1 style="font-size: 3.5rem; letter-spacing: -2px; margin-top: 10px; margin-bottom: 10px;">
+    LEVIATHAN <span style="color: #94a3b8; font-weight: 300;">|</span> RD
   </h1>
 
-  <!-- SOTTOTITOLO ULTRA DARK -->
-  <h3 style="
-      margin-top: 6px;
-      font-weight: 700;
-      color: #d6ffff;
-      text-shadow: 0 0 8px #00eaff;
-  ">
-    🇮🇹 Addon Stremio — Retrieval Daemon Engine
+  <p>
+    <img src="https://img.shields.io/badge/Project-Leviathan-darkred?style=for-the-badge&logo=dragon&logoColor=white" />
+    <img src="https://img.shields.io/badge/Real_Debrid-Ready-orange?style=for-the-badge&logo=rss&logoColor=white" />
+    <img src="https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" />
+    <img src="https://img.shields.io/badge/Status-ACTIVE-success?style=for-the-badge" />
+  </p>
+
+  <h3>
+    🇮🇹 Il Metamotore Torrent Italiano più potente mai creato.
   </h3>
 
-  <!-- SUBTEXT -->
-  <p style="font-size: 15.5px; margin-top: -5px;">
-    <b>Italian-First Indexing • Anti-Bot Shield • Auto-Refresh Lists • Query Intelligence 4.0</b>
+  <p>
+    <code>Adaptive Timeout</code> ⚡ <code>Italian-First Engine</code> ⚡ <code>Anti-Bot Intelligence</code> ⚡ <code>Magnet Boosting</code>
   </p>
-
-  <!-- BADGES POWERED -->
-  <p style="margin-top: 10px;">
-    <img src="https://img.shields.io/badge/Project-LEVIATHAN_RD-001f3f?style=for-the-badge&logo=dragon&logoColor=00eaff" />
-    <img src="https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" />
-    <img src="https://img.shields.io/badge/Status-ACTIVE-brightgreen?style=for-the-badge" />
-    <img src="https://img.shields.io/badge/Engine-Retrieval_Daemon_2.0-8a2be2?style=for-the-badge" />
-  </p>
-
-  <!-- MOTTO LASER -->
-  <h4 style="
-      color:#00eaff;
-      font-weight:700;
-      margin-top:14px;
-      letter-spacing:1px;
-      text-shadow:0 0 10px #00eaff;
-  ">
-    “Velocità. Precisione. Dominio.”
-  </h4>
 
 </div>
 
