@@ -58,27 +58,6 @@
 </div>
 
 
-  <!-- SUBTEXT -->
-  <p style="font-size: 15px; margin-top: -5px;">
-    <b>Adaptive Timeout • Italian-First Engine • Anti-Bot Intelligence • Magnet Boosting</b>
-  </p>
-
-  <!-- BADGES -->
-  <p>
-    <img src="https://img.shields.io/badge/Project-LEVIATHAN-001f3f?style=for-the-badge&logo=dragon&logoColor=00eaff" />
-    <img src="https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" />
-    <img src="https://img.shields.io/badge/Status-ACTIVE-brightgreen?style=for-the-badge" />
-    <img src="https://img.shields.io/badge/Engine-V2.0-8a2be2?style=for-the-badge" />
-  </p>
-
-  <!-- MOTTO -->
-  <h4 style="color:#00eaff; font-weight:700; margin-top:10px;">
-    "Velocità. Precisione. Aggressività."
-  </h4>
-
-</div>
-
-
 ---
 
 ## ⚡ Cos’è Leviathan?
