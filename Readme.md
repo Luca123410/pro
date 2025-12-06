@@ -1,33 +1,37 @@
-<div align="center">
+<div align="center" style="font-family: 'Segoe UI', sans-serif;">
 
-  <img src="https://api.iconify.design/game-icons:sea-dragon.svg?color=%2300eaff&width=200" alt="Leviathan Logo" />
+  <!-- Logo -->
+  <img src="https://api.iconify.design/game-icons:sea-dragon.svg?color=%2300eaff&width=220" alt="Leviathan Logo" style="filter: drop-shadow(0 0 12px #00eaff);" />
 
-  <h1 style="font-size: 4.5rem; font-weight: 900; margin: 0; letter-spacing: -4px; text-transform: uppercase;">
+  <!-- Title -->
+  <h1 style="font-size: 4.8rem; font-weight: 900; margin: 10px 0 0; letter-spacing: -4px; text-transform: uppercase; color: #00eaff; text-shadow: 0 0 8px #00eaff, 0 0 16px #19f2ff;">
     L E V I A T H A N
   </h1>
 
-  <div style="font-size: 1.25rem; margin-top: -5px; opacity: 0.85;">
-    <em>Deep-Web Torrent Metacrawler • Italian Cyber Engine</em>
+  <div style="font-size: 1.25rem; margin-top: -5px; opacity: 0.85; font-style: italic;">
+    Deep-Web Torrent Metacrawler • Italian Cyber Engine
   </div>
 
   <br>
 
+  <!-- Badges -->
   <p>
-    <img src="https://img.shields.io/badge/Real_Debrid-ENHANCED_Access-19C2F2?style=for-the-badge&logo=realdebrid&logoColor=000" />
-    <img src="https://img.shields.io/badge/AllDebrid-Integrated-F5A623?style=for-the-badge&logo=alldebrid&logoColor=fff" />
-    <img src="https://img.shields.io/badge/TorBox-Core_Support-7A4EE3?style=for-the-badge" />
+    <img src="https://img.shields.io/badge/Real_Debrid-ENHANCED_Access-19C2F2?style=for-the-badge&logo=realdebrid&logoColor=000" alt="RealDebrid Badge" />
+    <img src="https://img.shields.io/badge/AllDebrid-Integrated-F5A623?style=for-the-badge&logo=alldebrid&logoColor=fff" alt="AllDebrid Badge" />
+    <img src="https://img.shields.io/badge/TorBox-Core_Support-7A4EE3?style=for-the-badge" alt="TorBox Badge" />
   </p>
 
   <p>
-    <img src="https://img.shields.io/badge/Node.js-18%2B-3C873A?style=for-the-badge&logo=node.js&logoColor=fff" />
-    <img src="https://img.shields.io/badge/Engine_HyperMode-v3.5-8A2BE2?style=for-the-badge" />
-    <img src="https://img.shields.io/badge/Status-ONLINE-success?style=for-the-badge" />
+    <img src="https://img.shields.io/badge/Node.js-18%2B-3C873A?style=for-the-badge&logo=node.js&logoColor=fff" alt="Node.js Badge" />
+    <img src="https://img.shields.io/badge/Engine_HyperMode-v3.5-8A2BE2?style=for-the-badge" alt="Engine Badge" />
+    <img src="https://img.shields.io/badge/Status-ONLINE-success?style=for-the-badge" alt="Status Badge" />
   </p>
 
   <br>
 
-  <div style="background:#0a0f14; border:1px solid #00eaff33; padding:20px 28px; border-radius:12px; width:80%; max-width:780px; color:#d3faff;">
-    <strong style="font-size:1.45rem; color:#00eaff;">🇮🇹 Il Nuovo Standard dei Metamotori Torrent</strong>
+  <!-- Feature Box -->
+  <div style="background:#0a0f14; border:1px solid #00eaff44; padding:22px 30px; border-radius:16px; width:80%; max-width:780px; color:#d3faff; box-shadow: 0 0 15px #00eaff55; transition: all 0.3s ease;">
+    <strong style="font-size:1.5rem; color:#00eaff; text-shadow: 0 0 6px #00eaff;">🇮🇹 Il Nuovo Standard dei Metamotori Torrent</strong>
     <br><br>
     Progettato con un approccio <em>Italy-First</em>, Leviathan integra un sistema avanzato di mitigazione anti-bot, un motore multi-provider ad alte prestazioni e un framework di scraping stealth di nuova generazione.  
     Risultati accurati, affidabili e ottimizzati per la massima efficienza nella ricerca di contenuti italiani.
@@ -35,16 +39,34 @@
 
   <br>
 
-  <p style="font-size: 1.15rem; max-width: 700px;">
-    <code>AI Timeout Scaling</code> ⚡ 
-    <code>Smart Query Morphing</code> ⚡ 
-    <code>Ultra Stealth Headers</code> ⚡ 
-    <code>Magnet Fusion Engine</code>
-  </p>
+  <!-- Features Neon Boxes -->
+  <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:16px; max-width:760px;">
+    <div style="background:#00111a; color:#00eaff; padding:12px 18px; border-radius:12px; font-weight:600; box-shadow:0 0 12px #00eaff55; transition:0.3s; cursor:pointer;"
+         onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 0 20px #00eaff';"
+         onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 0 12px #00eaff55';">
+      AI Timeout Scaling
+    </div>
+    <div style="background:#00111a; color:#19f2ff; padding:12px 18px; border-radius:12px; font-weight:600; box-shadow:0 0 12px #19f2ff55; transition:0.3s; cursor:pointer;"
+         onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 0 20px #19f2ff';"
+         onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 0 12px #19f2ff55';">
+      Smart Query Morphing
+    </div>
+    <div style="background:#00111a; color:#00d1ff; padding:12px 18px; border-radius:12px; font-weight:600; box-shadow:0 0 12px #00d1ff55; transition:0.3s; cursor:pointer;"
+         onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 0 20px #00d1ff';"
+         onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 0 12px #00d1ff55';">
+      Ultra Stealth Headers
+    </div>
+    <div style="background:#00111a; color:#00aaff; padding:12px 18px; border-radius:12px; font-weight:600; box-shadow:0 0 12px #00aaff55; transition:0.3s; cursor:pointer;"
+         onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 0 20px #00aaff';"
+         onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 0 12px #00aaff55';">
+      Magnet Fusion Engine
+    </div>
+  </div>
 
   <br>
 
-  <hr style="border:0;height:1px;width:75%;background:linear-gradient(to right,transparent,#00eaff,transparent);margin:35px auto;" />
+  <!-- Separator -->
+  <hr style="border:0;height:2px;width:75%;background:linear-gradient(to right,transparent,#00eaff,transparent);margin:35px auto; box-shadow: 0 0 8px #00eaff33;" />
 
 </div>
 
