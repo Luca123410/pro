@@ -1,10 +1,10 @@
 <div align="center" style="font-family: 'Segoe UI', sans-serif;">
 
   <!-- Logo -->
-  <img src="https://api.iconify.design/game-icons:sea-dragon.svg?color=%2300eaff&width=220" alt="Leviathan Logo" style="filter: drop-shadow(0 0 12px #00eaff);" />
+  <img src="https://api.iconify.design/game-icons:sea-dragon.svg?color=%2300eaff&width=220" alt="Leviathan Logo" style="filter: drop-shadow(0 0 14px #00eaff); animation: glowPulse 2.5s infinite alternate;" />
 
   <!-- Title -->
-  <h1 style="font-size: 4.8rem; font-weight: 900; margin: 10px 0 0; letter-spacing: -4px; text-transform: uppercase; color: #00eaff; text-shadow: 0 0 8px #00eaff, 0 0 16px #19f2ff;">
+  <h1 style="font-size: 4.8rem; font-weight: 900; margin: 10px 0 0; letter-spacing: -4px; text-transform: uppercase; color: #00eaff; text-shadow: 0 0 8px #00eaff, 0 0 16px #19f2ff; animation: glowPulse 3s infinite alternate;">
     L E V I A T H A N
   </h1>
 
@@ -29,9 +29,11 @@
 
   <br>
 
-  <!-- Feature Box -->
-  <div style="background:#0a0f14; border:1px solid #00eaff44; padding:22px 30px; border-radius:16px; width:80%; max-width:780px; color:#d3faff; box-shadow: 0 0 15px #00eaff55; transition: all 0.3s ease;">
-    <strong style="font-size:1.5rem; color:#00eaff; text-shadow: 0 0 6px #00eaff;">🇮🇹 Il Nuovo Standard dei Metamotori Torrent</strong>
+  <!-- Main Feature Box -->
+  <div style="background:#0a0f14; border:1px solid #00eaff44; padding:22px 30px; border-radius:16px; width:80%; max-width:780px; color:#d3faff; box-shadow: 0 0 18px #00eaff55; transition: all 0.3s ease; animation: glowPulse 4s infinite alternate;">
+    <strong style="font-size:1.5rem; color:#00eaff; text-shadow: 0 0 6px #00eaff;">
+      🇮🇹 Il Nuovo Standard dei Metamotori Torrent
+    </strong>
     <br><br>
     Progettato con un approccio <em>Italy-First</em>, Leviathan integra un sistema avanzato di mitigazione anti-bot, un motore multi-provider ad alte prestazioni e un framework di scraping stealth di nuova generazione.  
     Risultati accurati, affidabili e ottimizzati per la massima efficienza nella ricerca di contenuti italiani.
@@ -39,36 +41,52 @@
 
   <br>
 
-  <!-- Features Neon Boxes -->
-  <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:16px; max-width:760px;">
-    <div style="background:#00111a; color:#00eaff; padding:12px 18px; border-radius:12px; font-weight:600; box-shadow:0 0 12px #00eaff55; transition:0.3s; cursor:pointer;"
-         onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 0 20px #00eaff';"
-         onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 0 12px #00eaff55';">
-      AI Timeout Scaling
-    </div>
-    <div style="background:#00111a; color:#19f2ff; padding:12px 18px; border-radius:12px; font-weight:600; box-shadow:0 0 12px #19f2ff55; transition:0.3s; cursor:pointer;"
-         onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 0 20px #19f2ff';"
-         onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 0 12px #19f2ff55';">
-      Smart Query Morphing
-    </div>
-    <div style="background:#00111a; color:#00d1ff; padding:12px 18px; border-radius:12px; font-weight:600; box-shadow:0 0 12px #00d1ff55; transition:0.3s; cursor:pointer;"
-         onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 0 20px #00d1ff';"
-         onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 0 12px #00d1ff55';">
-      Ultra Stealth Headers
-    </div>
-    <div style="background:#00111a; color:#00aaff; padding:12px 18px; border-radius:12px; font-weight:600; box-shadow:0 0 12px #00aaff55; transition:0.3s; cursor:pointer;"
-         onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 0 20px #00aaff';"
-         onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 0 12px #00aaff55';">
-      Magnet Fusion Engine
-    </div>
+  <!-- Neon Feature Boxes -->
+  <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:18px; max-width:760px;">
+    <div class="neon-box" style="--neon:#00eaff;">AI Timeout Scaling</div>
+    <div class="neon-box" style="--neon:#19f2ff;">Smart Query Morphing</div>
+    <div class="neon-box" style="--neon:#00d1ff;">Ultra Stealth Headers</div>
+    <div class="neon-box" style="--neon:#00aaff;">Magnet Fusion Engine</div>
   </div>
 
   <br>
 
   <!-- Separator -->
-  <hr style="border:0;height:2px;width:75%;background:linear-gradient(to right,transparent,#00eaff,transparent);margin:35px auto; box-shadow: 0 0 8px #00eaff33;" />
+  <hr style="border:0;height:2px;width:75%;background:linear-gradient(to right,transparent,#00eaff,transparent);margin:35px auto; box-shadow: 0 0 10px #00eaff33;" />
 
 </div>
+
+<!-- Neon Animation CSS -->
+<style>
+  @keyframes glowPulse {
+    0% { filter: drop-shadow(0 0 8px var(--neon, #00eaff)); }
+    50% { filter: drop-shadow(0 0 18px var(--neon, #00eaff)); }
+    100% { filter: drop-shadow(0 0 8px var(--neon, #00eaff)); }
+  }
+
+  .neon-box {
+    background:#00111a; 
+    color: var(--neon); 
+    padding:14px 22px; 
+    border-radius:14px; 
+    font-weight:600; 
+    box-shadow:0 0 12px var(--neon)66; 
+    transition: all 0.3s ease; 
+    cursor:pointer;
+    animation: neonPulse 3s infinite alternate;
+  }
+
+  .neon-box:hover {
+    transform: scale(1.08);
+    box-shadow: 0 0 25px var(--neon), 0 0 40px var(--neon)77;
+  }
+
+  @keyframes neonPulse {
+    0% { box-shadow:0 0 8px var(--neon)55; }
+    50% { box-shadow:0 0 20px var(--neon)77; }
+    100% { box-shadow:0 0 8px var(--neon)55; }
+  }
+</style>
 
 
 
